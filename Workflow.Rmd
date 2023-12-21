@@ -1,0 +1,274 @@
+---
+title: "Complete Workflow for Bone Biomarker Review"
+author: "Klaudia Adamowicz"
+date: "2023-12-21"
+output: 
+  html_document:
+    number_sections: false
+    toc: true
+    toc_float: true
+    toc_depth: 5
+---
+
+
+# Setup
+
+```{r setup, results='hide', message=FALSE, warning=FALSE, error=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
+required_packages <- c("rmarkdown", "gprofiler2", "data.table", "ggplot2", "igraph", "reticulate", "plotly", "tidyr", "dplyr")
+for(package in required_packages){
+  if(!require(package,character.only = TRUE, quietly = TRUE)) install.packages(package, dependencies = TRUE, quietly = TRUE)
+  library(package, character.only = TRUE, quietly = TRUE)
+}
+
+source("config.R")
+source("functions/intersection_functions.R")
+source("functions/network_enrichment_functions.R")
+#source("functions/scoringFunctions.R")
+#source("functions/IntersectionAnalysis.R")
+#source("functions/graphAnalysis.R")
+
+# set up environment
+reticulate::virtualenv_create("bbr")
+reticulate::py_install("drugstone", pip = TRUE, ignore_installed=TRUE, envname = "bbr")
+reticulate::use_virtualenv("bbr")
+
+# import python package
+ds <- reticulate::import("drugstone")
+ds$print_license()
+ds$accept_license()
+
+```
+
+# Intersection Analysis
+
+## Read Data (Gene Names)
+
+Read protein list that has been processed with proharmed (filter ids, remap gene names, map to ensembl ids, map orthologs) for all studies except for the two ECM mouse studies (only map to ensembl ids, map orthologs) since they didn't reported proteins ids in their paper.
+
+```{r}
+# Read and preprocess the data
+full_data <- as.data.frame(fread("data/cleaned_protein_list_uhh.csv", header = TRUE, na.strings = ""))
+rownames(full_data) <- full_data$V1
+full_data$V1 <- NULL
+
+# Detect the first row where the first column is numeric, indicating data start
+data_start_row <- which(sapply(rownames(full_data), function(x) grepl("^[0-9]+$", x)))[1]
+
+# Save data information and subset the main data
+
+data_info <- full_data[1:(data_start_row - 1),]
+DT::datatable(data_info, options = list(scrollX = TRUE))
+
+data <- full_data[data_start_row:nrow(full_data),]
+DT::datatable(head(data), options = list(scrollX = TRUE))
+
+# Explode data (one gene name per line, convert to numeric format)
+data <- explode_data(data)
+```
+
+## Caclulate Weights and Intersections
+
+```{r}
+# Initialize a list to store intermediate data frames
+intersections_list <- list()
+
+for(tissue in names(tissue_list)) {
+  if(weighting == "single") {
+    intersections_list[[tissue]] <- get_intersection_dt(data = data, data_info = data_info, label = "Tissue", 
+                                                        value = c(tissue_list[[tissue]]$label), 
+                                                        assay = tissue_list[[tissue]]$assay, 
+                                                        type = tissue)
+  } else if(weighting == "double") {
+    intersections_list[[tissue]] <- get_intersection_dt_double_weighting(data = data, data_info = data_info, label = "Tissue", 
+                                                                        value = c(tissue_list[[tissue]]$label), 
+                                                                        assay = tissue_list[[tissue]]$assay, 
+                                                                        type = tissue)
+  } else {
+    stop("Exiting RMarkdown due to wrong/missing value for 'weighting' inside config.R.")
+  }
+}
+
+# Combine all data frames into one
+intersections <- do.call(rbind, intersections_list)
+```
+
+## Filter Intersectione
+
+```{r}
+# Group by 'Type' and apply select_intersections() function to each group
+resulting_data_frames <- intersections %>%
+  group_by(Type) %>%
+  do(select_intersections(., intersection_thr=intersection_thr, weighting_thr=weighting_thr)) %>%
+  ungroup()
+
+# Combine resulting data frames into one
+filtered_intersections <- bind_rows(resulting_data_frames)
+```
+
+
+## Save Intersections
+
+```{r}
+intersections_all <- intersections
+intersections <- intersections[intersections$Intersected != 1,]
+write.table(intersections_all, paste0(out_dir,"intersection_analysis_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
+write.table(intersections, paste0(out_dir,"intersection_analysis_>1_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
+write.table(filtered_intersections, paste0(out_dir, "filtered_intersection_analysis_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
+DT::datatable(intersections)
+```
+
+## Visualizations
+
+### Sizes of Datasets per Tissue
+
+```{r}
+# Assuming intersections_all is already defined and contains 'Gene' and 'Datasets' columns
+intersections_all_exploded <- intersections_all %>%
+  select(Gene, Datasets) %>%
+  separate_rows(Datasets, sep = ";")
+
+# Count occurrences of each unique element in "Datasets"
+dataset_counts <- table(intersections_all_exploded$Datasets)
+
+# Convert the counts to a dataframe
+dataset_counts_df <- data.frame(Datasets = names(dataset_counts), Count = as.numeric(dataset_counts))
+dataset_counts_df$Datasets <- factor(dataset_counts_df$Datasets, levels = names(data_info))
+dataset_counts_df$Tissues <- unlist(c(data_info["Tissue", ])[dataset_counts_df$Datasets])
+dataset_counts_df$Tissues <- dataset_counts_df$Tissues
+
+# Create a mapping from original tissue names to new names using tissue_list
+tissue_mapping <- unlist(lapply(names(tissue_list), function(tissue) setNames(rep(tissue, length(tissue_list[[tissue]]$label)), tissue_list[[tissue]]$label)))
+
+# Replace tissue names using the mapping
+dataset_counts_df$Tissues  <- sapply(dataset_counts_df$Tissues, function(x) tissue_mapping[[x]])
+dataset_counts_df$Assay <- factor(sapply(dataset_counts_df$Tissues, function(x) tissue_list[[x]]$assay))
+dataset_counts_df$Tissues <- factor(dataset_counts_df$Tissues)
+
+# Create the boxplot with log-transformed y-axis
+boxplot <- ggplot(dataset_counts_df, aes(x = Tissues, y = Count, fill = Tissues)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, size = 2, alpha = 0.5) +  # Add jittered points
+  scale_fill_manual(values = colors_for_levels) +  # Custom colors
+  scale_y_log10() +  # Log-transform the y-axis
+  facet_grid(. ~ Assay, scales = "free_x", space = "free_x") +  # Separate 'In vitro' and 'In vivo'
+  labs(title = "Distribution of Dataset Counts by Tissue and Assay",
+       x = "",
+       y = "no. of DAPs per study (Log Scale)",
+       fill = "Tissue") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        panel.spacing = unit(2, "lines"))  # Adjust spacing between panels
+
+print(boxplot)
+ggsave(paste0(out_dir, "dataset_sizes_per_tissue.png"), boxplot, width = 30, height = 15, units = "cm", dpi = 150, bg = "white")
+```
+
+### Sizes of Prior and Post WSI Filtering
+
+```{r}
+# Your existing pre-filtered data preparation
+genes_per_tissue <- intersections_all %>%
+  rename(Tissue = Type) %>%
+  group_by(Tissue) %>%
+  summarise(SumUniqueGenes = n_distinct(Gene)) %>%
+  mutate(DataType = "Pre-Filtered")
+
+# Prepare post-filtered data
+filtered_genes_per_tissue <- filtered_intersections %>%
+  rename(Tissue = Type) %>%
+  group_by(Tissue) %>%
+  summarise(SumUniqueGenes = n_distinct(Gene)) %>%
+  mutate(DataType = "Post-Filtered")
+
+# Combine both datasets
+combined_genes_data <- rbind(genes_per_tissue, filtered_genes_per_tissue)
+
+combined_genes_data$DataType <- factor(combined_genes_data$DataType, levels = c("Pre-Filtered", "Post-Filtered"))
+
+# Create the bar plot
+bar_plot <- ggplot(combined_genes_data, aes(x = Tissue, y = SumUniqueGenes, fill = Tissue, alpha = DataType)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  geom_text(aes(label = SumUniqueGenes), 
+            position = position_dodge(width = 0.8), vjust = -0.5, size = 3) +
+  scale_y_log10() + # Log-transform the y-axis
+  scale_fill_manual(values = colors_for_levels) +
+  scale_alpha_manual(values = c(1, 0.5)) + # Pre-filtered bars are 50% transparent
+  labs(title = "Sum of Unique Genes Per Tissue (Pre and Post Filtering)",
+       x = "",
+       y = "Sum of Unique Genes") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank()) # Rotate x-axis labels for readability
+
+print(bar_plot)
+ggsave(paste0(out_dir, "sizes_per_tissue_pre_and_post_filtering.png"), bar_plot, width = 30, height = 15, units = "cm", dpi = 150, bg = "white")
+```
+
+### Filtering based on Intersection and Weight
+
+```{r}
+# For reproducibility, set a seed
+set.seed(123)
+
+# Loop over each unique value in the 'Type' column
+for (type in unique(intersections_all$Type)) {
+  
+  # Subset the dataframe
+  subset_df <- intersections_all[intersections_all$Type == type, ]
+  filtered_subset_df <- filtered_intersections[filtered_intersections$Type == type, ]
+  
+  # Call your custom function
+  result <- plot_weighted_intersection(weighted_dt=subset_df,
+                                        min_intersected=floor(filtered_subset_df$Size[[1]]/intersection_thr), 
+                                        min_weight=min(filtered_subset_df$Weight))
+  
+  # Save the plot
+  ggsave(paste0(out_dir, "barchart_plot_", type, ".png"), plot = result[[1]], device = "png", width = 10, height = 8, units = "in")
+  
+  # Save the dataframe
+  write.csv(result[[2]], file = paste0(out_dir, "barchart_data_", type, ".csv"), row.names = FALSE)
+}
+```
+
+## Identify Core Genes
+
+```{r}
+# Check for duplicated genes across different Types
+duplicated_genes <- filtered_intersections %>%
+  group_by(Gene) %>%
+  summarize(unique_types = n_distinct(Type), types = paste(Type, collapse = "; ")) %>%
+  filter(unique_types > 1) %>%
+  arrange(desc(unique_types))
+
+write.table(duplicated_genes, paste0(out_dir,"core_analysis_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
+# Display duplicated genes and their unique Type counts
+DT::datatable(duplicated_genes)
+```
+
+# Network Enrichment
+
+## Generate Networks
+
+### Core Genes
+
+```{r}
+seeds <- unique(duplicated_genes$Gene)
+core_ami_ds <- run_drugstone_ami(seeds)
+core_drugs_ds <- run_drugstone_drugs(core_ami_ds$ds_genes, core_ami_ds$ds_edges)
+save_results(core_drugs_ds, "core_genes")
+```
+
+### Tissue Genes
+
+```{r}
+de_results_types <- list("ami" = list(), "drugs" = list())
+for (type in unique(filtered_intersections$Type)) {
+  print(type)
+  subset <- subset(filtered_intersections, Type == type)
+  de_results_types[["ami"]][[type]] <- run_drugstone_ami(subset$Gene)
+  de_results_types[["drugs"]][[type]] <- run_drugstone_drugs(de_results_types[["ami"]][[type]]$ds_genes,
+                                                             de_results_types[["ami"]][[type]]$ds_edges)
+  save_results(ds_result = de_results_types[["drugs"]][[type]], filename = paste0(type))
+}
+```
+
