@@ -49,7 +49,7 @@ run_drugstone_drugs <- function(genes, edges){
 #' @examples
 #' save_results(ds_result, "my_analysis")
 #' @export
-save_results <- function(ds_result, filename){
+save_results <- function(ds_result, filename, out_dir){
   if ( "ds_drugs" %in% names(ds_result) ) {
     ds_drugs <- do.call(rbind, lapply(ds_result$ds_drugs, as.data.frame))
     ds_drugs <- ds_drugs %>% group_by(across(-hasEdgesTo)) %>%
@@ -68,3 +68,135 @@ save_results <- function(ds_result, filename){
   }
 }
 
+#' Extract Gene Categories
+#'
+#' This function extracts various categories of genes based on operations like set differences and intersections.
+#'
+#' @param seeds Vector containing seeds.
+#' @param ds_results Dataframe containing core drugs and associated genes.
+#' @param filtered_intersections Dataframe containing filtered intersections.
+#' @param all_genes Vector with all listed genes..
+#' @param nedrex_database (Optional) Dataframe containing Nedrex database information.
+#' @return A list containing different categories of genes.
+#' @examples
+#' extract_gene_categories(seeds, ds_results, filtered_intersections, all_genes, nedrex_database)
+#' @export
+
+extract_gene_categories <- function(seeds, ds_results, filtered_intersections, all_genes, nedrex_database = NULL) {
+  drugs <- names(ds_results$ds_drugs)
+  exception_genes <- setdiff(setdiff(ds_results$ds_gene, seeds), drugs)
+  
+  # Uncomment and use these lines if nedrex_database and type are provided and needed in your analysis
+  # not_in_network <- if (!is.null(nedrex_database)) setdiff(seeds, nedrex_database) else NULL
+  # lost_in_final_network <- if (!is.null(type)) setdiff(setdiff(seeds, ds_results$ds_gene), not_in_network) else NULL
+  
+  new_genes <- setdiff(exception_genes, all_genes)
+  exception_genes_in_filtered_intersection <- intersect(exception_genes, filtered_intersections$Gene)
+  exception_genes_filtered_out <- setdiff(setdiff(exception_genes, exception_genes_in_filtered_intersection), new_genes)
+  
+  return(list(
+    seeds = seeds,
+    drugs = drugs,
+    exception_genes = exception_genes,
+    # not_in_network = not_in_network,  # Uncomment if needed
+    # lost_in_final_network = lost_in_final_network,  # Uncomment if needed
+    new_genes = new_genes,
+    exception_genes_in_filtered_intersection = exception_genes_in_filtered_intersection,
+    exception_genes_filtered_out = exception_genes_filtered_out
+  ))
+}
+
+#' Prepare Node Attributes and Types for Graph
+#'
+#' This function prepares node attributes and types for a given graph. It categorizes nodes based on
+#' various gene categories obtained from 'extract_gene_categories' function.
+#'
+#' @param graph An igraph object representing the network graph.
+#' @param gene_categories A list of gene categories obtained from 'extract_gene_categories' function.
+#' @return A list containing two elements: 'attributes' which are the node attributes and 'types' which are the node types for each vertex in the graph.
+#' @examples
+#' # Assuming 'my_graph' is an igraph object and 'gene_cats' is the output from 'extract_gene_categories'
+#' prepare_node_attributes(my_graph, gene_cats)
+#' @export
+prepare_node_attributes <- function(graph, gene_categories) {
+  vertex_names <- igraph::V(graph)$name
+  seeds <- gene_categories$seeds
+  drugs <- gene_categories$drugs 
+  new_genes <- gene_categories$new_genes
+  exception_genes_in_filtered_intersection <- gene_categories$exception_genes_in_filtered_intersection
+  
+  seed_att <- ifelse(vertex_names %in% seeds, "seed",
+                     ifelse(vertex_names %in% drugs, "drug",
+                            ifelse(vertex_names %in% new_genes, "new",
+                                   ifelse(vertex_names %in% exception_genes_in_filtered_intersection, 
+                                          "significant only in single tissue", "filtered out for single tissue"))))
+  
+  node_type <- ifelse(vertex_names %in% seeds, "circle",
+                      ifelse(vertex_names %in% drugs, "diamond", "triangle"))
+  
+  list(attributes = seed_att, types = node_type)
+}
+
+
+draw_pie_chart_network <- function(graph, attributes, all_pie_values, pie_column, pie_colors, label, seed = 123, legend_position = "topleft",  vertex.size=3, vertex.label.size = 1.5, vertex.label.dist=0.35){
+  # make sure that in attributes only genes that are also in graph
+  attributes <- attributes[attributes$name %in% V(graph)$name,]
+  # make sure graph nodes and attribute data frame are in the same order
+  attributes  <- attributes[match(V(graph)$name, attributes$name),]
+  
+  # construct value list for pie-charts
+  values <- lapply(attributes$name, function(gene){
+    pie_values <- attributes[attributes$name == gene,][[pie_column]]
+    pie_values <- strsplit(pie_values, ";")[[1]]
+    pie_values <- as.numeric(all_pie_values %in% pie_values)
+    return(pie_values)
+  })
+  
+  # set seed
+  # plot with ggnet2
+  set.seed(seed)
+  p <- ggnet2(graph, size=3,label=TRUE, label.size = 2) 
+  
+  # extract coordinates of nodes
+  coordinates <- p$data
+  coordinates <- coordinates[, c("label", "x", "y")]
+  # order
+  coordinates <- coordinates[match(attributes$name, coordinates$label),]
+  
+  # set pie colors
+  V(graph)$pie.color=list(pie_colors)
+  
+  # built layout
+  layout <- as.matrix(coordinates[, c("x", "y")])
+  
+  # see how it works
+  par(mar = c(0, 0, 0, 0)) 
+  
+  # labeling
+  if(label){
+    label <- V(graph)$name
+  } else {
+    label <- NA
+  }
+  
+  # I think this tells igraph to normalize the coordinates of the 
+  # layout relative to the space you're working with
+  # see how it works
+  plot(graph,
+       vertex.shape="pie", 
+       vertex.pie=values,
+       vertex.label=label,
+       vertex.size=vertex.size,#3
+       vertex.label.family = "Helvetica",
+       vertex.label.font = 1,
+       vertex.label.dist = vertex.label.dist, #0.35,
+       vertex.label.degree = pi/2,
+       vertex.label.color = "black",
+       vertex.label.cex=vertex.label.size,#1.5,
+       edge.width = 2,
+       rescale = TRUE,
+       asp = 0,
+       layout = layout
+  )
+  legend(legend_position, legend = all_pie_values, pch = 16, col = pie_colors, bty = "n", cex = 3)
+}

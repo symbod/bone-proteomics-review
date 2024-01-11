@@ -15,7 +15,7 @@ output:
 
 ```{r setup, results='hide', message=FALSE, warning=FALSE, error=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
-required_packages <- c("rmarkdown", "gprofiler2", "data.table", "ggplot2", "igraph", "reticulate", "plotly", "tidyr", "dplyr")
+required_packages <- c("rmarkdown", "gprofiler2", "data.table", "ggplot2", "igraph", "reticulate", "plotly", "tidyr", "dplyr", "GGally", "ComplexHeatmap", "circlize")
 for(package in required_packages){
   if(!require(package,character.only = TRUE, quietly = TRUE)) install.packages(package, dependencies = TRUE, quietly = TRUE)
   library(package, character.only = TRUE, quietly = TRUE)
@@ -24,6 +24,7 @@ for(package in required_packages){
 source("config.R")
 source("functions/intersection_functions.R")
 source("functions/network_enrichment_functions.R")
+source("functions/scoring_functions.R")
 #source("functions/scoringFunctions.R")
 #source("functions/IntersectionAnalysis.R")
 #source("functions/graphAnalysis.R")
@@ -41,6 +42,11 @@ ds$accept_license()
 ```
 
 # Intersection Analysis
+
+```{r}
+in_out_dir <- paste0(out_dir, "intersection/")
+dir.create(file.path(in_out_dir), showWarnings = FALSE)
+```
 
 ## Read Data (Gene Names)
 
@@ -112,13 +118,19 @@ filtered_intersections <- bind_rows(resulting_data_frames)
 ```{r}
 intersections_all <- intersections
 intersections <- intersections[intersections$Intersected != 1,]
-write.table(intersections_all, paste0(out_dir,"intersection_analysis_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
-write.table(intersections, paste0(out_dir,"intersection_analysis_>1_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
-write.table(filtered_intersections, paste0(out_dir, "filtered_intersection_analysis_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
+filtered_intersections <- filtered_intersections[filtered_intersections$Intersected != 1,]
+write.table(intersections_all, paste0(in_out_dir,"intersection_analysis_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
+write.table(intersections, paste0(in_out_dir,"intersection_analysis_>1_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
+write.table(filtered_intersections, paste0(in_out_dir, "filtered_intersection_analysis_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
 DT::datatable(intersections)
 ```
 
 ## Visualizations
+
+```{r}
+in_vis_out_dir <- paste0(in_out_dir, "visualizations/")
+dir.create(file.path(in_vis_out_dir), showWarnings = FALSE)
+```
 
 ### Sizes of Datasets per Tissue
 
@@ -161,7 +173,7 @@ boxplot <- ggplot(dataset_counts_df, aes(x = Tissues, y = Count, fill = Tissues)
         panel.spacing = unit(2, "lines"))  # Adjust spacing between panels
 
 print(boxplot)
-ggsave(paste0(out_dir, "dataset_sizes_per_tissue.png"), boxplot, width = 30, height = 15, units = "cm", dpi = 150, bg = "white")
+ggsave(paste0(in_vis_out_dir, "dataset_sizes_per_tissue.png"), boxplot, width = 30, height = 15, units = "cm", dpi = 150, bg = "white")
 ```
 
 ### Sizes of Prior and Post WSI Filtering
@@ -201,7 +213,7 @@ bar_plot <- ggplot(combined_genes_data, aes(x = Tissue, y = SumUniqueGenes, fill
   theme(axis.text.x = element_blank()) # Rotate x-axis labels for readability
 
 print(bar_plot)
-ggsave(paste0(out_dir, "sizes_per_tissue_pre_and_post_filtering.png"), bar_plot, width = 30, height = 15, units = "cm", dpi = 150, bg = "white")
+ggsave(paste0(in_vis_out_dir, "sizes_per_tissue_pre_and_post_filtering.png"), bar_plot, width = 30, height = 15, units = "cm", dpi = 150, bg = "white")
 ```
 
 ### Filtering based on Intersection and Weight
@@ -211,10 +223,10 @@ ggsave(paste0(out_dir, "sizes_per_tissue_pre_and_post_filtering.png"), bar_plot,
 set.seed(123)
 
 # Loop over each unique value in the 'Type' column
-for (type in unique(intersections_all$Type)) {
+for (type in unique(intersections$Type)) {
   
   # Subset the dataframe
-  subset_df <- intersections_all[intersections_all$Type == type, ]
+  subset_df <- intersections[intersections$Type == type, ]
   filtered_subset_df <- filtered_intersections[filtered_intersections$Type == type, ]
   
   # Call your custom function
@@ -223,10 +235,10 @@ for (type in unique(intersections_all$Type)) {
                                         min_weight=min(filtered_subset_df$Weight))
   
   # Save the plot
-  ggsave(paste0(out_dir, "barchart_plot_", type, ".png"), plot = result[[1]], device = "png", width = 10, height = 8, units = "in")
+  ggsave(paste0(in_vis_out_dir, "barchart_plot_", type, ".png"), plot = result[[1]], device = "png", width = 10, height = 8, units = "in")
   
   # Save the dataframe
-  write.csv(result[[2]], file = paste0(out_dir, "barchart_data_", type, ".csv"), row.names = FALSE)
+  write.csv(result[[2]], file = paste0(in_vis_out_dir, "barchart_data_", type, ".csv"), row.names = FALSE)
 }
 ```
 
@@ -240,12 +252,18 @@ duplicated_genes <- filtered_intersections %>%
   filter(unique_types > 1) %>%
   arrange(desc(unique_types))
 
-write.table(duplicated_genes, paste0(out_dir,"core_analysis_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
+write.table(duplicated_genes, paste0(in_out_dir,"core_analysis_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
 # Display duplicated genes and their unique Type counts
 DT::datatable(duplicated_genes)
 ```
 
 # Network Enrichment
+
+```{r}
+ne_out_dir <- paste0(out_dir, "netenrich/")
+dir.create(file.path(ne_out_dir), showWarnings = FALSE)
+```
+
 
 ## Generate Networks
 
@@ -255,7 +273,7 @@ DT::datatable(duplicated_genes)
 seeds <- unique(duplicated_genes$Gene)
 core_ami_ds <- run_drugstone_ami(seeds)
 core_drugs_ds <- run_drugstone_drugs(core_ami_ds$ds_genes, core_ami_ds$ds_edges)
-save_results(core_drugs_ds, "core_genes")
+save_results(core_drugs_ds, "core_genes", ne_out_dir)
 ```
 
 ### Tissue Genes
@@ -268,7 +286,596 @@ for (type in unique(filtered_intersections$Type)) {
   de_results_types[["ami"]][[type]] <- run_drugstone_ami(subset$Gene)
   de_results_types[["drugs"]][[type]] <- run_drugstone_drugs(de_results_types[["ami"]][[type]]$ds_genes,
                                                              de_results_types[["ami"]][[type]]$ds_edges)
-  save_results(ds_result = de_results_types[["drugs"]][[type]], filename = paste0(type))
+  save_results(ds_result = de_results_types[["drugs"]][[type]], filename = paste0(type), ne_out_dir)
 }
+```
+
+## Visualize Networks
+
+```{r}
+ne_vis_out_dir <- paste0(ne_out_dir, "visualizations/")
+dir.create(file.path(ne_vis_out_dir), showWarnings = FALSE)
+```
+
+
+```{r}
+# Plotting the graph
+color_palette <- c("seed" = "lightblue", "new" = "red", "significant only in single tissue" = "lightgreen", 
+                   "filtered out for single tissue" = "orange", "drug" = "violet")
+```
+
+
+```{r}
+set.seed(123)
+
+gene_categories <- extract_gene_categories(seeds = duplicated_genes$Gene, 
+                                           ds_results = core_drugs_ds, 
+                                           filtered_intersections = filtered_intersections, 
+                                           all_genes = rownames(data))
+
+# Using the updated function
+node_info <- prepare_node_attributes(graph = core_drugs_ds$ds_graph, gene_categories = gene_categories)
+core_drugs_ds$ds_graph <- igraph::set_vertex_attr(core_drugs_ds$ds_graph, "node_attributes", value = node_info$attributes)
+core_drugs_ds$ds_graph <- igraph::set_vertex_attr(core_drugs_ds$ds_graph, "node_type", value = node_info$types)
+
+p <- ggnet2(core_drugs_ds$ds_graph, size="degree", color = "node_attributes", shape = "node_type", 
+            color.palette =  color_palette, label=TRUE, label.size = 3) + guides(size = FALSE) + 
+  scale_shape_manual(values = c("circle", "diamond", "triangle"), labels = c("seed", "drug", "exception")) 
+ggsave(paste0(ne_vis_out_dir, "core_genes-drugs_graph.png"), p, width = 35, height = 15, units = "cm", dpi = 150)
+print(p)
+```
+
+```{r}
+# Loop over each type
+for (type in unique(filtered_intersections$Type)) {
+  set.seed(123)
+
+  subset <- subset(filtered_intersections, Type == type)
+
+  # Extract gene categories for each type
+  gene_categories <- extract_gene_categories(
+    seeds = subset$Gene,
+    ds_results = de_results_types[["drugs"]][[type]],
+    filtered_intersections = filtered_intersections,
+    all_genes = rownames(data)
+  )
+
+  # Prepare node attributes for the graph with drugs
+  node_info_with_drugs <- prepare_node_attributes(
+    graph = de_results_types[["drugs"]][[type]]$ds_graph,
+    gene_categories = gene_categories
+  )
+
+  # Update graph with node attributes and types for the graph with drugs
+  de_results_types[["drugs"]][[type]]$ds_graph <- igraph::set_vertex_attr(de_results_types[["drugs"]][[type]]$ds_graph, "node_attributes", value = node_info_with_drugs$attributes)
+  de_results_types[["drugs"]][[type]]$ds_graph <- igraph::set_vertex_attr(de_results_types[["drugs"]][[type]]$ds_graph, "node_type", value = node_info_with_drugs$types)
+
+  # Plot the graph with drugs
+  p_with_drugs <- ggnet2(de_results_types[["drugs"]][[type]]$ds_graph, size = "degree", color = "node_attributes", shape = "node_type", 
+              color.palette = color_palette, label = TRUE, label.size = 2) + guides(size = FALSE) + 
+  scale_shape_manual(values = c("circle", "diamond", "triangle"), labels = c("seed", "drug", "exception")) 
+  ggsave(paste0(ne_vis_out_dir, type, "-drugs_graph.png"), p_with_drugs, width = 30, height = 15, units = "cm", dpi = 150)
+
+  # Prepare node attributes for the graph without drugs
+  node_info_without_drugs <- prepare_node_attributes(
+    graph = de_results_types[["ami"]][[type]]$ds_graph,
+    gene_categories = gene_categories
+  )
+
+  # Update graph with node attributes and types for the graph without drugs
+  de_results_types[["ami"]][[type]]$ds_graph <- igraph::set_vertex_attr(de_results_types[["ami"]][[type]]$ds_graph, "node_attributes", value = node_info_without_drugs$attributes)
+  de_results_types[["ami"]][[type]]$ds_graph <- igraph::set_vertex_attr(de_results_types[["ami"]][[type]]$ds_graph, "node_type", value = node_info_without_drugs$types)
+
+  # Plot the graph without drugs
+  p_without_drugs <- ggnet2(de_results_types[["ami"]][[type]]$ds_graph, size = "degree", color = "node_attributes", shape = "node_type", 
+              color.palette = color_palette, label = TRUE, label.size = 2) + guides(size = FALSE) + 
+  scale_shape_manual(values = c("circle", "triangle"), labels = c("seed", "exception")) 
+  ggsave(paste0(ne_vis_out_dir, type, "-ami_graph.png"), p_without_drugs, width = 30, height = 15, units = "cm", dpi = 150)
+}
+
+```
+
+
+## Create Compelete Network
+
+```{r}
+combined_graph <- make_empty_graph(directed=FALSE)
+
+names_list <- names(de_results_types$drugs)
+
+for (name in names_list) {
+  current_graph <- de_results_types$drugs[[name]]$ds_graph
+
+  # Loop through each vertex in the current graph
+  for (v in V(current_graph)) {
+    vertex_name <- V(current_graph)$name[v] 
+    vertex_attr <- V(current_graph)$node_attributes[v]
+
+    # Check if a vertex with the same "name" attribute already exists in the combined_graph
+    existing_vertex <- which(V(combined_graph)$name == vertex_name)
+
+    if (length(existing_vertex) == 0) {
+      # Add new vertex
+      combined_graph <- add_vertices(combined_graph, 1, name=vertex_name, node_attributes=vertex_attr, source=name)
+
+    } else {
+      # Update attributes of the existing vertex
+      existing_attr <- V(combined_graph)[existing_vertex]$node_attributes
+
+      if (existing_attr != vertex_attr) {
+        V(combined_graph)[existing_vertex]$node_attributes <- paste(existing_attr, vertex_attr, sep=";")
+      }
+
+      # Update source attribute
+      existing_source <- V(combined_graph)[existing_vertex]$source
+      V(combined_graph)[existing_vertex]$source <- paste(existing_source, name, sep=";")
+    }
+  }
+
+  # Combine edges
+  for (e in E(current_graph)) {
+    source_name <- V(current_graph)[get.edges(current_graph, e)[1]]$name
+    target_name <- V(current_graph)[get.edges(current_graph, e)[2]]$name
+
+    if (!are_adjacent(combined_graph, source_name, target_name)) {
+      combined_graph <- add_edges(combined_graph, c(source_name, target_name))
+    }
+  }
+}
+
+
+V(combined_graph)$node_attributes <- sapply(V(combined_graph)$node_attributes, function(attr) {
+  if (attr %in% c("seed;significant only in single tissue", "significant only in single tissue;seed")) {return("seed")} else {return(attr)}})
+
+V(combined_graph)$shape <- sapply(V(combined_graph)$node_attributes, function(attr) {
+  if (attr == "seed") {return("circle")} else { if (attr == "drug")  {return("diamond")} else {return("triangle")}}})
+```
+
+### Visualize
+
+```{r}
+# Remove nodes that are 'drug'
+non_drug_nodes <- which(V(combined_graph)$node_attributes != "drug")
+combined_nodrug_graph <- induced_subgraph(combined_graph, non_drug_nodes)
+
+set.seed(123)
+p <- ggnet2(combined_nodrug_graph, size=3, shape="shape", color = "node_attributes", color.palette =  c("seed" = "lightblue", "new" = "red", "significant only in single tissue" = "lightgreen", "filtered out for single tissue" = "orange"), 
+            label=TRUE, label.size = 2) + scale_shape_manual(values = c("circle","triangle"),
+                            labels = c("Seed", "Exception")) 
+ggsave(paste0(ne_vis_out_dir, "complete_graph.png"), p, width = 30, height = 15, units = "cm", dpi = 150)
+print(p)
+
+colors_for_levels <- c(
+  "EVs" = "#A3A500",
+  "Cells" = "#F8766D",
+  "Liquid-Biopsy" = "#E76BF3",
+  "Bone" = "#00B0F6",
+  "ECM" = "#00BF7D"
+#  "exception" = "lightgrey",
+#  "drug" = "#7C7C7C"
+)
+
+png(file=paste0(ne_vis_out_dir, "complete_graph_withlabel.png"), height = 2000, width = 3000, res=100)
+draw_pie_chart_network(graph = combined_nodrug_graph, 
+                       attributes = as.data.frame(get.vertex.attribute(combined_nodrug_graph)), 
+                       all_pie_values = names(colors_for_levels),
+                       pie_column = "source",
+                       pie_colors = colors_for_levels,
+                       label = TRUE,
+                       seed = 123,
+                       legend_position = "topleft")
+dev.off()
+png(file=paste0(ne_vis_out_dir, "complete_graph_withoutlabel.png"), height = 2000, width = 3000, res=100)
+draw_pie_chart_network(graph = combined_nodrug_graph, 
+                       attributes = as.data.frame(get.vertex.attribute(combined_nodrug_graph)), 
+                       all_pie_values = names(colors_for_levels),
+                       pie_column = "source",
+                       pie_colors = colors_for_levels,
+                       label = FALSE,
+                       seed = 123,
+                       legend_position = "topleft")
+dev.off()
+```
+
+### Aggregate
+
+```{r}
+# Define sources to aggregate and to keep separate
+sources_to_aggregate <- names(colors_for_levels)
+sources_to_keep_separate <- unique(V(combined_nodrug_graph)$source[!V(combined_nodrug_graph)$source %in% names(colors_for_levels)])
+
+# Step 1: Create New Graph with Aggregated Nodes
+node_sources <- V(combined_nodrug_graph)$source  # Assuming 'source' is the attribute name
+
+# Creating new nodes for aggregation and keeping separate nodes
+node_counts <- sapply(sources_to_aggregate, function(src) sum(node_sources == src))
+aggregated_node_names <- paste0("Aggregated_", node_counts)
+
+# Create a vector of names for nodes that are not being aggregated
+separate_node_names <- V(combined_nodrug_graph)$name[node_sources %in% sources_to_keep_separate]
+
+new_graph <- graph.empty(n = length(aggregated_node_names) + length(separate_node_names), 
+                         directed = is.directed(combined_graph))
+
+# Setting names and other attributes
+V(new_graph)$name <- c(aggregated_node_names, separate_node_names)
+
+# Setting the 'source' attribute correctly
+# For aggregated nodes, the source is the same as their type
+# For non-aggregated nodes, retain their original source
+aggregated_sources <- rep(sources_to_aggregate, times = 1)
+separate_sources <- V(combined_nodrug_graph)$source[node_sources %in% sources_to_keep_separate]
+V(new_graph)$source <- c(aggregated_sources, separate_sources)
+
+# Copy shape attributes from combined_graph for non-aggregated nodes
+original_shapes <- V(combined_nodrug_graph)$shape
+separate_shapes <- original_shapes[node_sources %in% sources_to_keep_separate]
+
+# For aggregated nodes, set the shape to 'square'
+aggregated_shapes <- rep("square", length(aggregated_node_names))
+
+# Combine the shape attributes for the new_graph
+V(new_graph)$shape <- c(aggregated_shapes, separate_shapes)
+
+# Ensure the length of source vector is equal to the number of vertices in new_graph
+if(length(V(new_graph)$source) != gorder(new_graph)) {
+    stop("Mismatch in number of vertices and length of source attribute vector.")
+}
+
+# Step 2: Add Edges Based on Original Graph
+for(e in E(combined_nodrug_graph)) {
+    edge_vertices <- ends(combined_nodrug_graph, e, names=TRUE)
+    src_name <- ifelse(V(combined_nodrug_graph)[edge_vertices[1]]$source %in% sources_to_aggregate, 
+                       paste0("Aggregated_", sum(node_sources == V(combined_nodrug_graph)[edge_vertices[1]]$source)), 
+                       V(combined_nodrug_graph)[edge_vertices[1]]$name)
+    tgt_name <- ifelse(V(combined_nodrug_graph)[edge_vertices[2]]$source %in% sources_to_aggregate, 
+                       paste0("Aggregated_", sum(node_sources == V(combined_nodrug_graph)[edge_vertices[2]]$source)), 
+                       V(combined_nodrug_graph)[edge_vertices[2]]$name)
+    
+    src <- which(V(new_graph)$name == src_name)
+    tgt <- which(V(new_graph)$name == tgt_name)
+    
+    if(length(src) > 0 && length(tgt) > 0 && !any(are_adjacent(new_graph, src, tgt))) {
+        new_graph <- add_edges(new_graph, c(src, tgt))
+    }
+}
+
+# Removing self-loops
+self_loops <- which(sapply(E(new_graph), function(e) ends(new_graph, e)[1] == ends(new_graph, e)[2]))
+new_graph <- delete.edges(new_graph, self_loops)
+
+```
+
+```{r}
+png(file=paste0(ne_vis_out_dir, "aggregated-complete_graph_withlabel.png"), height = 2000, width = 3000, res=100)
+draw_pie_chart_network(graph = new_graph, 
+                       attributes = as.data.frame(get.vertex.attribute(new_graph)), 
+                       all_pie_values = names(colors_for_levels),
+                       pie_column = "source",
+                       pie_colors = colors_for_levels,
+                       label = TRUE,
+                       seed = 123,
+                       legend_position = "topleft")
+dev.off()
+```
+
+#### Check for drugs again
+
+```{r}
+non_agg <- V(new_graph)$name[!startsWith(V(new_graph)$name, "Agg")]
+single_tissue_exc <- setdiff(non_agg, duplicated_genes$Gene)
+
+drugs_agg <- get_top_drugs(genes = non_agg, number = 1000L)
+```
+
+
+
+# Scorings
+
+## Network Scorings
+
+```{r}
+network_scoring <- score_gene_network(g = core_ami_ds$ds_graph, attribute_name = "name")
+
+create_top_genes_heatmap(scoring_df = network_scoring, 
+                         output_file = paste0(ne_vis_out_dir, "top_genes_network_heatmap.png"))
+```
+
+## Enrichement Scorings
+
+```{r}
+enrich_scoring <- score_genes_enrichment(genes = core_ami_ds$ds_genes)
+
+create_top_genes_heatmap(scoring_df = enrich_scoring, 
+                         output_file = paste0(ne_vis_out_dir, "top_genes_enrich_heatmap.png"))
+```
+
+## Drugs
+
+```{r}
+drugs <- get_top_drugs(genes = core_ami_ds$ds_genes, number = 1000L)
+
+calculate_drug_connections <- function(drugs, gene_ids) {
+  # Split the 'hasEdgesTo' column and count occurrences
+  gene_counts <- strsplit(as.character(drugs$hasEdgesTo), ",") %>%
+    unlist() %>%
+    table() %>%
+    as.data.frame()
+
+  # Rename columns for clarity
+  names(gene_counts) <- c("IDs", "drugs")
+
+  # Create a complete list of gene_ids with 0 counts for those not in gene_counts
+  complete_gene_list <- data.frame(IDs = gene_ids, drugs = 0)
+  gene_counts <- merge(complete_gene_list, gene_counts, by = "IDs", all.x = TRUE)
+  gene_counts$drugs <- rowSums(gene_counts[, c("drugs.x", "drugs.y")], na.rm = TRUE)
+
+  # Drop the extra columns after merging
+  gene_counts <- gene_counts[, c("IDs", "drugs")]
+
+  # Add ranking based on the number of drugs connected
+  gene_counts$drugs_Rank <- rank(-gene_counts$drugs, ties.method = "average")
+
+  return(gene_counts)
+}
+
+
+drug_scores <- calculate_drug_connections(drugs, network_scoring$IDs)
+```
+
+
+## Combined
+
+```{r}
+create_combined_heatmap(network_scoring, enrich_scoring, 
+                        output_file = paste0(ne_vis_out_dir, "top_genes_combined_heatmap.png"))
+```
+
+```{r}
+#top_genes_network <- extract_top_genes_union(network_scoring)$top_genes_union
+#top_genes_enrich <- extract_top_genes_union(enrich_scoring)$top_genes_union
+
+#all_top_genes <- unique(c(top_genes_network, top_genes_enrich))
+
+all_top_genes <- drug_scores[drug_scores$drugs != 0,]$ID
+
+# Select data for these genes from both scorings
+network_data_selected <- network_scoring[network_scoring$IDs %in% all_top_genes, ]
+enrich_data_selected <- enrich_scoring[enrich_scoring$IDs %in% all_top_genes, ]
+
+# Merge the selected data
+combined_data <- merge(network_data_selected, enrich_data_selected, by = "IDs", all = TRUE)
+
+cols <- c("IDs", grep("_Rank$", names(combined_data), value = TRUE))
+combined_data <- combined_data[, ..cols]
+
+plot_mat <- as.matrix(combined_data[,-1], rownames=combined_data$IDs)
+
+drug_annotation <- drug_scores[match(rownames(plot_mat), drug_scores$IDs), "drugs"]
+type_annotation <- igraph::as_data_frame(core_drugs_ds$ds_graph, what= "vertices")["node_attributes"]
+type_annotation <- type_annotation[match(rownames(plot_mat), rownames(type_annotation)), "node_attributes"]
+
+
+drug_colors <- colorRampPalette(c("white", "red"))(max(drug_annotation) + 1)
+names(drug_colors) <- 0:max(drug_annotation)
+ha <- rowAnnotation(Drugs = anno_simple(drug_annotation, pch = paste(drug_annotation), col = drug_colors),
+                    Type = anno_simple(type_annotation, col = color_palette, pch = type_annotation, pt_size = unit(0.5, "cm"), width = max_text_width(month.name)*1.2))
+
+# 1. Parse the 'drugs' DataFrame
+drugs_list <- strsplit(as.character(drugs$hasEdgesTo), ",")
+names(drugs_list) <- drugs$label
+
+# 2. Create Binary Matrix for Gene-Drug Associations
+gene_drug_matrix <- do.call(cbind, lapply(drugs_list, function(drug_genes) {
+  +(rownames(plot_mat) %in% drug_genes)
+}))
+rownames(gene_drug_matrix) <- rownames(plot_mat)
+colnames(gene_drug_matrix) <- names(drugs_list)
+
+# 3. Calculate Distance Matrix
+# Here, Jaccard distance is used as an example. You can choose other metrics as appropriate.
+gene_distance_matrix <- as.dist(1 - proxy::simil(gene_drug_matrix, method = "correlation"))
+
+# 4. Cluster the Genes
+gene_clustering <- hclust(gene_distance_matrix)
+
+col_fun <- colorRamp2(c(1, 10, max(plot_mat)), c("darkgreen", "orange", "grey"))
+
+pdf( paste0(ne_vis_out_dir, "top_genes_combined_heatmap.pdf"))#, width = 2000, height = 3000), res = 300) # Adjust dimensions as needed
+
+heatmap <- Heatmap(
+  plot_mat,
+  name = "measure",
+  col = col_fun,
+  left_annotation = ha,
+  show_row_names = TRUE,
+  show_column_names = TRUE,
+  cluster_rows = gene_clustering,
+  cluster_columns = TRUE,
+  cell_fun = function(j, i, x, y, width, height, fill) {
+    grid.text(plot_mat[i, j], x, y, gp = gpar(fontsize = 8)) # Adjust fontsize as needed
+  },
+  heatmap_legend_param = list(
+    title = "Measure Rank",
+    at = c(1, 10, max(plot_mat)),
+    labels = c("1 (Best)", "10", paste0(max(plot_mat)," (Worse)")),
+    color_bar = "continuous"
+  )
+)
+
+
+draw(heatmap)
+
+dev.off()
+```
+
+
+#### Check Drugs
+
+
+
+
+
+
+# Enrichmenet Term Analysis
+
+```{r}
+prop <- fread("../BoneBiomarkerReview/data/results/go_networks/term_intersections_proportions.tsv")
+prop1 <- prop[prop$term_name == "cell adhesion",]
+
+seeds <- strsplit(prop1$intersecting_genes_all[1], ", ")[[1]]
+ami_ds <- run_drugstone_ami(seeds)
+drugs_ds <- run_drugstone_drugs(ami_ds$ds_genes, ami_ds$ds_edges)
+```
+
+```{r}
+# Select only the columns 'intersecting_genes' and 'dataframes'
+selected_data <- prop1[, .(intersecting_genes, dataframes)]
+
+# Split 'intersecting_genes' by ", " and explode the rows
+exploded_data <- selected_data[, strsplit(intersecting_genes, ", "), by = .(dataframes)]
+
+# Convert the list column to individual rows
+exploded_data_long <- exploded_data[, .(intersecting_gene = unlist(V1)), by = .(dataframes)]
+exploded_data_long[, dataframes := gsub(", ", ";", dataframes)]
+
+list_by_gene <- split(exploded_data_long$dataframes, exploded_data_long$intersecting_gene)
+```
+
+```{r}
+seed_att <- sapply(igraph::get.vertex.attribute(drugs_ds$ds_graph)$name, function(x) {ifelse(x %in% seeds,  list_by_gene[[x]],  ifelse(x %in% names(drugs_ds$ds_drugs),  "drug",  "exception"))})
+drugs_ds$ds_graph <- igraph::set_vertex_attr(drugs_ds$ds_graph, "node_source", value = seed_att)
+```
+
+
+```{r}
+colors_for_levels <- c(
+  "EVs" = "#A3A500",
+  "Cells" = "#F8766D",
+  "Liquid-Biopsy" = "#E76BF3",
+  "Bone" = "#00B0F6",
+  "ECM" = "#00BF7D",
+  "exception" = "lightgrey",
+  "drug" = "#7C7C7C"
+)
+png(file=paste0("cell_adhesion_metwork_with_drugs.png"), height = 2000, width = 3000, res=100)
+draw_pie_chart_network(graph = drugs_ds$ds_graph, 
+                       attributes = as.data.frame(get.vertex.attribute(drugs_ds$ds_graph)), 
+                       all_pie_values = names(colors_for_levels),
+                       pie_column = "node_source",
+                       pie_colors = colors_for_levels,
+                       label = TRUE,
+                       seed = 123,
+                       legend_position = "topleft")
+dev.off()
+```
+
+```{r}
+seed_att <- sapply(igraph::get.vertex.attribute(ami_ds$ds_graph)$name, function(x) {ifelse(x %in% seeds,  list_by_gene[[x]], "Exception")})
+ami_ds$ds_graph <- igraph::set_vertex_attr(ami_ds$ds_graph, "node_source", value = seed_att)
+
+colors_for_levels <- c(
+  "EVs" = "#A3A500",
+  "Cells" = "#F8766D",
+  "Liquid-Biopsy" = "#E76BF3",
+  "Bone" = "#00B0F6",
+  "ECM" = "#00BF7D",
+  "Exception" = "lightgrey"
+)
+png(file=paste0("cell_adhesion_metwork.png"), height = 2000, width = 3000, res=100)
+draw_pie_chart_network(graph = ami_ds$ds_graph, 
+                       attributes = as.data.frame(get.vertex.attribute(ami_ds$ds_graph)), 
+                       all_pie_values = names(colors_for_levels),
+                       pie_column = "node_source",
+                       pie_colors = colors_for_levels,
+                       label = TRUE,
+                       seed = 123,
+                       legend_position = "topleft")
+dev.off()
+```
+
+```{r}
+save_results(drugs_ds, "cell_adhesion_genes", "")
+```
+
+# jgjdg
+
+```{r}
+prop2 <- prop[prop$term_name == "collagen-containing extracellular matrix",]
+
+seeds <- strsplit(prop2$intersecting_genes_all[1], ", ")[[1]]
+ami_ds <- run_drugstone_ami(seeds)
+drugs_ds <- run_drugstone_drugs(ami_ds$ds_genes, ami_ds$ds_edges)
+```
+
+```{r}
+# Select only the columns 'intersecting_genes' and 'dataframes'
+selected_data <- prop2[, .(intersecting_genes, dataframes)]
+
+# Split 'intersecting_genes' by ", " and explode the rows
+exploded_data <- selected_data[, strsplit(intersecting_genes, ", "), by = .(dataframes)]
+
+# Convert the list column to individual rows
+exploded_data_long <- exploded_data[, .(intersecting_gene = unlist(V1)), by = .(dataframes)]
+exploded_data_long[, dataframes := gsub(", ", ";", dataframes)]
+
+list_by_gene <- split(exploded_data_long$dataframes, exploded_data_long$intersecting_gene)
+```
+
+```{r}
+seed_att <- sapply(igraph::get.vertex.attribute(drugs_ds$ds_graph)$name, function(x) {ifelse(x %in% seeds,  list_by_gene[[x]],  ifelse(x %in% names(drugs_ds$ds_drugs),  "drug",  "exception"))})
+drugs_ds$ds_graph <- igraph::set_vertex_attr(drugs_ds$ds_graph, "node_source", value = seed_att)
+```
+
+
+```{r}
+colors_for_levels <- c(
+  "EVs" = "#A3A500",
+  "Cells" = "#F8766D",
+  "Liquid-Biopsy" = "#E76BF3",
+  "Bone" = "#00B0F6",
+  "ECM" = "#00BF7D",
+  "exception" = "lightgrey",
+  "drug" = "#7C7C7C"
+)
+png(file=paste0("collagen-containing_EM_metwork_with_drugs.png"), height = 2000, width = 3000, res=100)
+draw_pie_chart_network(graph = drugs_ds$ds_graph, 
+                       attributes = as.data.frame(get.vertex.attribute(drugs_ds$ds_graph)), 
+                       all_pie_values = names(colors_for_levels),
+                       pie_column = "node_source",
+                       pie_colors = colors_for_levels,
+                       label = TRUE,
+                       seed = 123,
+                       legend_position = "topleft")
+dev.off()
+```
+
+```{r}
+seed_att <- sapply(igraph::get.vertex.attribute(ami_ds$ds_graph)$name, function(x) {ifelse(x %in% seeds,  list_by_gene[[x]], "Exception")})
+ami_ds$ds_graph <- igraph::set_vertex_attr(ami_ds$ds_graph, "node_source", value = seed_att)
+
+colors_for_levels <- c(
+  "EVs" = "#A3A500",
+  "Cells" = "#F8766D",
+  "Liquid-Biopsy" = "#E76BF3",
+  "Bone" = "#00B0F6",
+  "ECM" = "#00BF7D",
+  "Exception" = "lightgrey"
+)
+png(file=paste0("collagen-containing_EM_metwork.png"), height = 2000, width = 3000, res=100)
+draw_pie_chart_network(graph = ami_ds$ds_graph, 
+                       attributes = as.data.frame(get.vertex.attribute(ami_ds$ds_graph)), 
+                       all_pie_values = names(colors_for_levels),
+                       pie_column = "node_source",
+                       pie_colors = colors_for_levels,
+                       label = TRUE,
+                       seed = 123,
+                       legend_position = "topleft")
+dev.off()
+```
+
+```{r}
+save_results(drugs_ds, "collagen-containing_EM", "")
+```
 ```
 
