@@ -231,12 +231,13 @@ plot_weighted_intersection <- function(weighted_dt, min_intersected, min_weight)
     scale_linetype_manual(values = c("Minimum Weight" = "dotted"),
                           name = "Min Weight Line") +
     facet_wrap(~Intersected, ncol = max(dt$Intersected), scales = "free_x") + 
+    theme_bw() +
     theme(axis.text.x = element_text(angle = 90, hjust = 1), plot.title = element_text(hjust = 0.5),
           legend.position = "bottom",
           legend.box = "vertical") +
     guides(fill = guide_legend(order = 1, title.position = "top"), 
            linetype = guide_legend(order = 2, title.position = "bottom")) + # Control the order of the legends
-    ggtitle(paste0("Weighted Intersection for ", subset_df$Type[[1]], " (Size:", subset_df$Size[[1]], ")")) 
+    ggtitle(paste0(subset_df$Type[[1]], " (Size:", subset_df$Size[[1]], ")")) 
   
   return(list(Plot = p, Data = dt))
 }

@@ -1,0 +1,9 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.Rprofile
+# remove renv
+renv/
+# remove all .DS_Store
+**/.DS_Store
