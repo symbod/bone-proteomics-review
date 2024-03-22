@@ -212,6 +212,8 @@ bar_plot <- ggplot(combined_genes_data, aes(x = Tissue, y = SumUniqueGenes, fill
   theme_minimal() +
   theme(axis.text.x = element_blank()) # Rotate x-axis labels for readability
 
+saveRDS(combined_genes_data, paste0(out_dir, "/intersection/combined_genes_data_unharmonized.rds"))
+
 print(bar_plot)
 ggsave(paste0(in_vis_out_dir, "sizes_per_tissue_pre_and_post_filtering.png"), bar_plot, width = 30, height = 15, units = "cm", dpi = 150, bg = "white")
 ```
@@ -918,28 +920,44 @@ names(tissue_annotation) <- att_df_core$name
 
 # create temp directory for saving pie chart
 out_dir <- "/Users/lisiarend/Desktop/bone-proteomics-review/data/results/"
-out_tmp <- paste0(out_dir, "/temp_pie_charts")
-dir.create(out_tmp)
+out_tmp_tissue <- paste0(out_dir, "/temp_pie_charts_tissue")
+out_tmp_assay <- paste0(out_dir, "/temp_pie_charts_assay")
+dir.create(out_tmp_tissue)
+dir.create(out_tmp_assay)
 sapply(names(tissue_annotation[!tissue_annotation %in% c("new", "problem")]), function(gene){
   tissues <- strsplit(tissue_annotation[gene], ";")[[1]]
   data <- data.frame(tissue = tissues, value = rep(1, length(tissues)))
+  data$assay <- sapply(data$tissue, function(x) tissue_list[[x]]$assay)
+  # replace in vivo by "In vivo"
+  data$assay[data$assay == "in vivo"] <- "In vivo"
+  # tissue piechart
   ggplot(data, aes(x = "", y = value, fill = tissue)) + geom_bar(stat = "identity", width = 1) +
   coord_polar("y", start = 0) + scale_fill_manual(values = colors_for_levels[tissues]) + theme_void() +   theme(legend.position = "none")
-  ggsave(paste0(out_tmp, "/", gene, ".png"), width = 1, height = 1)
+  ggsave(paste0(out_tmp_tissue, "/", gene, ".png"), width = 1, height = 1)
+  
+  # assay piechart
+  ggplot(unique(data[, c("value", "assay")]), aes(x = "", y = value, fill = assay)) + geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) + scale_fill_manual(values = colors_for_levels[unique(data$assay)]) + theme_void() +   theme(legend.position = "none")
+  ggsave(paste0(out_tmp_assay, "/", gene, ".png"), width = 1, height = 1)
+  
 })
 
-pie_charts_files <- list.files(out_tmp, full.names = TRUE)
-
+pie_charts_tissue_files <- list.files(out_tmp_tissue, full.names = TRUE)
+pie_charts_assay_files <- list.files(out_tmp_assay, full.names = TRUE)
 
 # rearrange vector for problem and new 
-names(pie_charts_files) <- sapply(list.files(out_tmp), function(x) strsplit(x, ".png")[[1]])
-#names_new_problem_genes <- names(tissue_annotation[tissue_annotation %in% c("new", "problem")])
+names(pie_charts_tissue_files) <- sapply(list.files(out_tmp_tissue), function(x) strsplit(x, ".png")[[1]])
 names_new_problem_genes <- ids_order[! ids_order %in% names(tissue_annotation)]
 new_problem_genes <- rep("", length(names_new_problem_genes))
 names(new_problem_genes) <- names_new_problem_genes
 
-tissue_anno_vec <- c(pie_charts_files, new_problem_genes)
+tissue_anno_vec <- c(pie_charts_tissue_files, new_problem_genes)
 tissue_anno_vec <- tissue_anno_vec[ids_order]
+
+# assay annotation
+names(pie_charts_assay_files) <- sapply(list.files(out_tmp_assay), function(x) strsplit(x, ".png")[[1]])
+assay_anno_vec <- c(pie_charts_assay_files, new_problem_genes)
+assay_anno_vec <- assay_anno_vec[ids_order]
 
 # type annotation (seed, new, filtered out for single tissue)
 type_annotation <- igraph::as_data_frame(core_drugs_ds$ds_graph, what= "vertices")["node_attributes"]
@@ -966,7 +984,8 @@ right_annotation <- rowAnnotation(DIGEST = anno_simple(digest_medians$DIGEST, co
                                   Type = type_annotation, 
                                   Tissue = anno_image(tissue_anno_vec, which = "row", border = TRUE, 
                                                       gp = gpar(col = "black"), space = unit(0, "cm")),
-                                  
+                                  Assay = anno_image(assay_anno_vec, which = "row", border = TRUE,
+                                                     gp = gpar(col = "black"), space = unit(0, "cm")),
                                   col = list(Type = color_palette[unique(type_annotation)], Literature = literature_colors), 
                                   gp = gpar(col = "black"),
                                   show_legend = FALSE,
@@ -987,7 +1006,8 @@ scoring_heatmap <- Heatmap(as.matrix(all_ranks),
     grid.text(all_ranks[i, j], x, y, gp = gpar(fontsize = 10)) # Adjust fontsize as needed
   },
   show_heatmap_legend = FALSE,
-  height = unit(0.5, "cm")*nr
+  height = unit(0.5, "cm")*nr,
+  width = unit(6, "cm")
 )
 
 
@@ -996,6 +1016,8 @@ ht_opt$ROW_ANNO_PADDING <- unit(0.5, "cm")
 
 
 tissue_legend <- Legend(labels = names(tissue_list), title = "Tissue", legend_gp = gpar(fill = colors_for_levels[names(tissue_list)], type = "grid"))
+assays <- c("In vitro", "In vivo")
+assay_legend <- Legend(labels = assays, title = "Assay", legend_gp = gpar(fill = colors_for_levels[assays], type = "grid"))
 heatmap_legend <- Legend( title = "Measure Rank",
     at = c(1, 10, max(all_ranks)),
     labels = c("1 (Best)", "10", paste0(max(all_ranks)," (Worse)")), col_fun = col_fun)
@@ -1006,8 +1028,8 @@ digest_legend <- Legend(title =  "Significance Contribution (DIGEST)",
 literature_legend <- Legend(labels = unique(literature_results$Literature), title = "Literature", legend_gp = gpar(fill = literature_colors), type = "grid")
 
 
-png(paste0(out_dir, "scoring_heatmap.png"), width=9,height=12,units="in",res=1200)
-draw(scoring_heatmap, annotation_legend_list = list(heatmap_legend, digest_legend, drug_legend, literature_legend, type_legend, tissue_legend), annotation_legend_side = "right", ht_gap = unit(0.5, "cm"), auto_adjust = TRUE)
+png(paste0(out_dir, "scoring_heatmap.png"), width=11,height=12,units="in",res=1200)
+draw(scoring_heatmap, annotation_legend_list = list(heatmap_legend, digest_legend, drug_legend, literature_legend, type_legend, tissue_legend, assay_legend), annotation_legend_side = "right", ht_gap = unit(0.5, "cm"), auto_adjust = TRUE)
 dev.off()
 ```
 
