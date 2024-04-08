@@ -32,6 +32,26 @@ DT::datatable(head(data), options = list(scrollX = TRUE))
 input <- t(data_info[c(1,2,4,5),])
 input <- as.data.frame(input)
 colnames(input)[1] <- "Approach"
+
+
+# study sizes
+sizes <- input[, c("Approach", "Species", "Tissue")]
+sizes <- sizes %>% mutate(row_id = row_number()) %>%
+  pivot_longer(-row_id, names_to = "variable", values_to = "value") %>%
+  group_by(variable, value) %>%
+  summarize(count = n(), .groups = "drop") #%>%
+sizes <- sizes[, c("value", "count")] %>%
+  mutate(across(value, ~recode(.,
+                               "cells" = "Cells",
+                               "bone" = "Bone",
+                               "Serum-Plasma" = "Liquid-Biopsy",
+                               "Plasma-EVs" = "Liquid-Biopsy",
+                               "in vivo" = "In vivo")))
+sizes <- sizes %>% group_by(value) %>% summarize(count = sum(count), .groups = "drop")
+sizes$labels <- paste0(sizes$value, " (", sizes$count, ")")
+size_vector <- setNames(sizes$labels, sizes$value)
+
+
 df <- input %>% make_long(Species, Approach, Tissue)
 df <- df %>%
   mutate(across(everything(), ~recode(.,
@@ -40,12 +60,17 @@ df <- df %>%
                                       "Serum-Plasma" = "Liquid-Biopsy",
                                       "Plasma-EVs" = "Liquid-Biopsy",
                                       "in vivo" = "In vivo")))
+
 levels <- c("-", "PXD", 
             "Rat", "Rabbit", "Mouse", "Human", 
             "In vivo", "In vitro", 
             "Liquid-Biopsy", "Bone", "ECM","Cells", "EVs")
 df$node <- factor(df$node, levels = levels)
 df$next_node <- factor(df$next_node, levels = levels)
+
+df <- df %>% mutate(across(everything(), ~recode(., !!!size_vector)))
+
+colors_for_levels_sizes <- setNames(colors_for_levels, size_vector[names(colors_for_levels)])
 
 ## generate plot
 sankey <- ggplot(df, aes(x = x, 
@@ -57,7 +82,7 @@ sankey <- ggplot(df, aes(x = x,
 )) +
   geom_sankey(flow.alpha = .6, node.color = "black") +
   geom_sankey_label( size = 3, color = "black", fill="white") +
-  scale_fill_manual(values = colors_for_levels) +
+  scale_fill_manual(values = colors_for_levels_sizes) +
   theme_sankey(base_size = 10, base_family = "Arial")  +
   scale_x_discrete(position = "top") +
   theme(legend.position = "none",

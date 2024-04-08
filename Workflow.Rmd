@@ -824,10 +824,6 @@ create_combined_heatmap(network_scoring, enrich_scoring,
 ## Heatmap of Median Network Ranks, Median Enrichment Ranks, and ...
 
 ```{r}
-# at this point necessary input:
-# drug_scores, network_scoring, enrich_scoring, drugs, boneabund_scoring, access_scoring, digest_results, 
-
-
 # functions
 check_vertex <- function(vertex, core_graph, combined_graph) {
   if (V(core_graph)[vertex]$node_attributes == "new") {
