@@ -355,6 +355,11 @@ p <- ggnet2(core_ami_ds$ds_graph, size="degree", color = "node_attributes", shap
             color.palette =  color_palette, label=TRUE, label.size = 3) + guides(size = FALSE) + 
    scale_color_manual(name = "Node Attributes", values = color_palette) +
   scale_shape_manual(values = c("circle", "triangle"), labels = c("seed", "exception"), name = "Node Type")
+
+# save network data as excel sheet
+core_network_data <- p$data[, c("label", "color", "shape")]
+colnames(core_network_data) <- c("Gene", "Node Type", "Node Attributes")
+
 ggsave(paste0(ne_vis_out_dir, "core_genes_graph.png"), p, width = 10, height = 7, dpi = 300)
 print(p)
 
@@ -447,29 +452,21 @@ network_sizes <- rbindlist(network_sizes, fill = TRUE, idcol = TRUE)
 colnames(network_sizes)[1] <- "Tissue"
 network_sizes <- network_sizes[, c("Tissue", "seed", "new", "filtered out after WSI", "significant in other tissues")]
 
+# save network data as excel sheet
+networks_tissues_data <- lapply(networks_tissues, function(x){
+  dt <- x$data[, c("label", "color", "shape")]
+  colnames(dt) <- c("Gene", "Node Type", "Node Attributes")
+  return(dt)
+})
 
+networks_tissues_data[["Core Network"]] <- core_network_data
 
+library(openxlsx)
+openxlsx::write.xlsx(networks_tissues_data, file = paste(out_dir, "network_tissues_data.xlsx"))
 
-# small_networks <- ggarrange(networks_tissues$ECM, networks_tissues$EVs, common.legend = TRUE, labels = c("A ECM", "B  EVs"), legend = "right", widths = c(0.5, 1))
-# ggsave(paste0(ne_vis_out_dir, "EVs-Liquid-Biopsy-ami_graph.png"), small_networks, width = 12, height = 7, dpi = 300)
-# 
-# big_networks <- ggarrange(networks_tissues$Cells, networks_tissues$EVs, networks_tissues$Bone, labels = c("A Cells", "B EVs", "C Bone"), common.legend = TRUE, legend = "right", ncol = 1)
-# ggsave(paste0(ne_vis_out_dir, "EVs-Cells-EVs-Bone-ami_graph.png"), big_networks, width = 12, height = 16, dpi = 300)
-# 
-# n1 <- ggarrange(networks_tissues$Cells, networks_tissues$ECM, labels = c("A  Cells", "B  ECM"), widths = c(1, 0.6), common.legend = TRUE, legend = "none")
-# 
-# n2 <- ggarrange(networks_tissues$EVs, networks_tissues$`Liquid-Biopsy`, widths = c(1, 0.6), labels = c("C  EVs", "D  Liquid-Biopsy"), common.legend = TRUE, legend = "none")
-# 
-# legend <- get_legend(networks_tissues$Bone)
-# 
-# n3 <- ggarrange(networks_tissues$Bone, as_ggplot(legend), labels = c("E  Bone", ""), widths= c(1, 0.6), legend = "none")
-# 
-# all_networks_plot <- ggarrange(n1, n2, n3, ncol = 1)
-# ggsave(paste0(ne_vis_out_dir, "all-networks-ami_graph.png"), all_networks_plot, width = 12, height = 16, dpi = 300)
-```
+````
 
-
-## Create Compelete Network
+## Create Complete Network
 
 ```{r}
 combined_graph <- make_empty_graph(directed=FALSE)
@@ -1058,13 +1055,16 @@ final_ranks <- merge(final_ranks, literature_results, by = "IDs")
 network_scoring <- network_scoring[match(enrich_scoring$IDs, network_scoring$IDs),]
 network_scoring <- network_scoring[, c(6, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11)]
 
+# TODO: add drugs
+
 data_names <- list(
   "Overview" = final_ranks,
   "Network Scores + Ranks" = network_scoring,
   "Enrichment Scores + Ranks" = enrich_scoring,
   "Accessibility Scores + Ranks" = access_scoring,
   "Bone Abundance Scores + Ranks" = boneabund_scoring,
-  "DIGEST" = digest_results
+  "DIGEST" = digest_results,
+  "Drugs" = drugs
 )
 library(openxlsx)
 openxlsx::write.xlsx(data_names, file = paste(out_dir, "scoring_heatmap_data.xlsx"))
