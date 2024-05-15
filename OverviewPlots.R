@@ -1,5 +1,5 @@
 ## ----- Load required libraries -----
-required_packages <- c("readxl","remotes", "dplyr", "ggplot2", "RColorBrewer", "data.table", "ggpubr", "tidyr")
+required_packages <- c("readxl","remotes", "dplyr", "ggplot2", "RColorBrewer", "data.table", "ggpubr", "tidyr", "DT")
 
 for(package in required_packages){
   print(package)
@@ -140,7 +140,7 @@ boxplot <- ggplot(dataset_counts_df, aes(x = Tissues, y = Count, fill = Tissues)
   scale_y_log10() +  # Log-transform the y-axis
   facet_grid(. ~ Assay, scales = "free_x", space = "free_x") +  # Separate 'In vitro' and 'In vivo'
   labs(x = "",
-       y = "Nr. of DAPs (Log Scale)",
+       y = "Nr. of Proteins (Log Scale)",
        fill = "Tissue") +
   theme_minimal() +
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),
@@ -188,7 +188,7 @@ bar_plot <- ggplot(combined_genes_data, aes(x = Tissue, y = SumUniqueGenes, fill
   scale_alpha_manual(values = c(0.4, 1)) + # Pre-filtered bars are 50% transparent
   labs(
        x = "",
-       y = "Nr. of DAPs (Log Scale)") +
+       y = "Nr. of Proteins (Log Scale)") +
   theme_minimal() +
   theme(axis.text.x = element_blank(), 
         axis.ticks.x = element_blank(),
