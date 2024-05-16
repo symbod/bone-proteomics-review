@@ -30,14 +30,14 @@ source("functions/scoring_functions.R")
 #source("functions/graphAnalysis.R")
 
 # set up environment
-reticulate::virtualenv_create("bbr")
-reticulate::py_install("drugstone", pip = TRUE, ignore_installed=TRUE, envname = "bbr")
-reticulate::use_virtualenv("bbr")
+#reticulate::virtualenv_create("bbr")
+#reticulate::py_install("drugstone", pip = TRUE, ignore_installed=TRUE, envname = "bbr")
+#reticulate::use_virtualenv("bbr")
 
 # import python package
-ds <- reticulate::import("drugstone")
-ds$print_license()
-ds$accept_license()
+#ds <- reticulate::import("drugstone")
+#ds$print_license()
+#ds$accept_license()
 
 ```
 
@@ -773,7 +773,7 @@ colnames(digest_medians)[2] <- "DIGEST"
 ## Literature Results
 
 ```{r}
-literature_results <- read_excel("data/literature_versand.xlsx", sheet = "Tabelle1")
+literature_results <- read_excel("data/literature_versand.xlsx", sheet = "Tabelle1") # check if current version with SERPINA1 = beneficial
 literature_results <- as.data.table(literature_results)
 colnames(literature_results)[2] <- "Literature"
 ```
@@ -868,7 +868,7 @@ get_median_rank_data <- function(scoring_dt, rank_string = "Rank"){
 # prepare data (median of individual ranks)
 
 # get median over all network ranks
-
+library(stringr)
 network_medians <- get_median_rank_data(network_scoring, rank_string = "Network_Rank")
 enrich_medians <- get_median_rank_data(enrich_scoring, "Enrich_Rank")
 access_medians <- get_median_rank_data(as.data.table(access_scoring), "Accessibility_Rank")
@@ -882,6 +882,8 @@ all_ranks <- merge(all_ranks, boneabund_medians, by = "IDs") %>% as.data.frame()
 ```
 
 ```{r}
+
+library(circlize)
 # rank heatmap
 ids_order <- all_ranks$IDs
 row.names(all_ranks) <- all_ranks$IDs
@@ -1015,7 +1017,7 @@ heatmap_legend <- Legend( title = "Measure Rank",
     at = c(1, 10, max(all_ranks)),
     labels = c("1 (Best)", "10", paste0(max(all_ranks)," (Worse)")), col_fun = col_fun)
 type_legend <- Legend(labels = unique(type_annotation), title = "Type", legend_gp = gpar(fill = color_palette[unique(type_annotation)], type = "grid"))
-drug_legend <- Legend(col_fun = drug_colors, title = "Drugs")
+drug_legend <- Legend(col_fun = drug_colors, title = "Drugs", at = c(0, max(drug_annotation)))
 digest_legend <- Legend(title =  "Significance Contribution (DIGEST)",
                         col_fun = col_fun_digest)
 literature_legend <- Legend(labels = unique(literature_results$Literature), title = "Literature", legend_gp = gpar(fill = literature_colors), type = "grid")
