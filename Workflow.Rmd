@@ -15,29 +15,28 @@ output:
 
 ```{r setup, results='hide', message=FALSE, warning=FALSE, error=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
-required_packages <- c("rmarkdown", "gprofiler2", "data.table", "ggplot2", "igraph", "reticulate", "plotly", "tidyr", "dplyr", "GGally", "ComplexHeatmap", "circlize", "readxl", "ggpattern")
+required_packages <- c("rmarkdown", "gprofiler2", "data.table", "ggplot2", "igraph", "reticulate", "plotly", "tidyr", "dplyr", "GGally", "ComplexHeatmap", "circlize", "readxl", "ggpattern", "stringr", "openxlsx")
 for(package in required_packages){
   if(!require(package,character.only = TRUE, quietly = TRUE)) install.packages(package, dependencies = TRUE, quietly = TRUE)
   library(package, character.only = TRUE, quietly = TRUE)
 }
 
+remotes::install_github("davidsjoberg/ggsankey")
+library(ggsankey)
+
+
 source("config.R")
-source("functions/intersection_functions.R")
-source("functions/network_enrichment_functions.R")
-source("functions/scoring_functions.R")
-#source("functions/scoringFunctions.R")
-#source("functions/IntersectionAnalysis.R")
-#source("functions/graphAnalysis.R")
+sapply(list.files("functions/", pattern = ".R", full.names = TRUE), source)
 
 # set up environment
-#reticulate::virtualenv_create("bbr")
-#reticulate::py_install("drugstone", pip = TRUE, ignore_installed=TRUE, envname = "bbr")
-#reticulate::use_virtualenv("bbr")
+reticulate::virtualenv_create("bbr")
+reticulate::py_install("drugstone", pip = TRUE, ignore_installed=TRUE, envname = "bbr")
+reticulate::use_virtualenv("bbr")
 
 # import python package
-#ds <- reticulate::import("drugstone")
-#ds$print_license()
-#ds$accept_license()
+ds <- reticulate::import("drugstone")
+ds$print_license()
+ds$accept_license()
 ```
 
 # Read Data
@@ -45,8 +44,8 @@ source("functions/scoring_functions.R")
 ```{r}
 # Read original meta-study data on gene name level
 original_data_genes <- read_meta_study_data(file_path = original_study_file, "Gene names")
+data_info <- original_data_genes$`meta-info`
 original_data_genes <- original_data_genes$data
-data_info <- original_data_genes$meta_info
 
 # Read original meta-study data on protein level
 original_data_proteins <- read_meta_study_data(file_path = original_study_file, "UniprotAC")
@@ -60,11 +59,22 @@ original_data_proteins_exploded <- explode_data(original_data_proteins)
 # Harmonization of Data
 
 ```{r}
-# TODO: harmonization function
+harm_out_dir <- paste0(out_dir, "harmonization/")
+dir.create(file.path(harm_out_dir), showWarnings = FALSE)
+```
+
+```{r}
+# TODO: harmonization function -> check if study 27 is mouse
 harmonized_data <- run_proharmed(gene_level = original_data_genes, protein_level = original_data_proteins)
 
 # Save harmonized data
 #TODO
+
+# TODO: generate logging supplementary figure -> either source the file or create function (but code already clean)
+source("logging.R")
+
+# Read harmonized data from paper:
+harmonized_data <- readRDS(paste0(harm_out_dir, "harmonized_data.rds"))
 
 # Explode harmonized data
 data <- explode_data(harmonized_data)
@@ -72,78 +82,52 @@ data <- explode_data(harmonized_data)
 
 ## Visualizations
 
-```{r}
-in_vis_out_dir <- paste0(in_out_dir, "visualizations/")
-dir.create(file.path(in_vis_out_dir), showWarnings = FALSE)
-```
-
 ### Venn Diagrams
 
 ```{r}
 harmonization_venns <- create_harmonization_venn_diagrams(data_info)
-#ggsave(paste0(in_vis_out_dir, "pie_plots_studies.png"), width = 12, height = 4.5)
+harmonization_venns
+#ggsave(paste0(harm_out_dir, "pie_plots_studies.png"), width = 12, height = 4.5)
 ```
-
 
 ### Harmonization Logging Figure 
 
-TODO
+TODO!!!
 
 # Intersection Analysis of Tissue-Specific Proteins
-
-Upon harmonization, the next step was to select commonly affected proteins (CAPs) that are consistently present across multiple studies. 
 
 ```{r}
 in_out_dir <- paste0(out_dir, "intersection/")
 dir.create(file.path(in_out_dir), showWarnings = FALSE)
 ```
 
-## Calculate Weights and Intersections
-
-TODO
+## Calculate Weights and Intersections for each Tissue
 
 ```{r}
-# Initialize a list to store intermediate data frames
-intersections_list <- list()
+# Intersections of Harmonized Data
+intersections <- calculate_intersections(data, data_info, tissue_list, weighting)
 
-for(tissue in names(tissue_list)) {
-  if(weighting == "single") {
-    intersections_list[[tissue]] <- get_intersection_dt(data = data, data_info = data_info, label = "Tissue", 
-                                                        value = c(tissue_list[[tissue]]$label), 
-                                                        assay = tissue_list[[tissue]]$assay, 
-                                                        type = tissue)
-  } else if(weighting == "double") {
-    intersections_list[[tissue]] <- get_intersection_dt_double_weighting(data = data, data_info = data_info, label = "Tissue", 
-                                                                        value = c(tissue_list[[tissue]]$label), 
-                                                                        assay = tissue_list[[tissue]]$assay, 
-                                                                        type = tissue)
-  } else {
-    stop("Exiting RMarkdown due to wrong/missing value for 'weighting' inside config.R.")
-  }
-}
+# Intersections of Original Data
+intersections_original <- calculate_intersections(original_data_genes_exploded, data_info, tissue_list, weighting)
+# remove 9_human -> no gene names provided intersection
+intersections_original <- intersections_original[intersections_original$Gene != "no Gene names provided",]
 
-# Combine all data frames into one
-intersections <- do.call(rbind, intersections_list)
 ```
 
 ## Filter Intersections
 
-TODO
-
 ```{r}
-# Group by 'Type' and apply select_intersections() function to each group
-resulting_data_frames <- intersections %>%
-  group_by(Type) %>%
-  do(select_intersections(., intersection_thr=intersection_thr, weighting_thr=weighting_thr)) %>%
-  ungroup()
+# Intersections of Harmonized Data
+filtered_intersections <- filter_intersections(intersections, intersection_thr, weighting_thr)
 
-# Combine resulting data frames into one
-filtered_intersections <- bind_rows(resulting_data_frames)
+# Intersections of Original Data
+filtered_intersections_original <- filter_intersections(intersections_original, intersection_thr, weighting_thr)
 ```
 
 ## Save Intersections
 
 ```{r}
+# Only save harmonized intersections
 intersections_all <- intersections
 intersections <- intersections[intersections$Intersected != 1,]
 filtered_intersections <- filtered_intersections[filtered_intersections$Intersected != 1,]
@@ -155,7 +139,24 @@ DT::datatable(intersections)
 
 ## Visualizations
 
-### Sankey plot
+### Summary of included studies and selection of co-affected proteins
+
+```{r}
+
+# Sankey on the number of studies per tissue and species 
+sankey <- generate_sankey_plot(data_info)
+
+# Number of extracted DAPs per study and tissue type
+boxplot_DAPs <- plot_boxplot_DAPS(intersections_all)
+
+# Number of CAPs per study and tissue type (pre-filtered and post-filtered)
+barplot_CAPs <- plot_barplot_CAPS(intersections_all, filtered_intersections)
+
+# Combine for paper figure 3
+p <- ggarrange(boxplot_DAPs, barplot_CAPs, ncol = 2, labels = c("B", "C"), font.label = list(size = 16), legend = "none")
+ggarrange(sankey, p, ncol = 2, labels = c("A", ""), heights = c(0.7, 1), font.label = list(size = 16), legend.grob = get_legend(barplot_CAPs), legend = "bottom")
+ggsave(paste(in_out_dir, "overview_plots.png"), width = 8, height = 3)
+```
 
 ### WSI for each tissue
 
@@ -175,25 +176,23 @@ for (type in unique(intersections_all$Type)) {
                                         min_intersected=floor(filtered_subset_df$Size[[1]]/intersection_thr), 
                                         min_weight=min(filtered_subset_df$Weight))
   
-  # Save the plot
-  ggsave(paste0(out_dir, "barchart_plot_", type, ".png"), plot = result[[1]], device = "png", width = 15, height = 8, units = "in")
-  
   # Plots
   plots[[type]] <- result[[1]] + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) + labs(x = "Intersections")
-  
-  # Save the dataframe
-  write.csv(result[[2]], file = paste0(out_dir, "barchart_data_", type, ".csv"), row.names = FALSE)
 }
 
 p1 <- ggarrange(plots$Cells, plots$EVs, common.legend = TRUE, ncol = 1, labels = c("A","B"), legend = "none")
 p2 <- ggarrange(plots$ECM, plots$Bone, plots$`Liquid-Biopsy`, nrow = 1, labels = c("C", "D", "E"), legend = "none")
 ggarrange(p1, p2, ncol = 1, labels = NULL, common.legend = FALSE, legend = "bottom", heights = c(2,1), legend.grob = get_legend(plots$Cells))
-ggsave(paste0(out_dir, "weighted_intersections_all.png"), width = 10, height = 12)
+ggsave(paste0(in_out_dir, "weighted_intersections_all.png"), width = 10, height = 12)
 ```
 
 ### Intersection Size in Harmonized Data and Original Data
 
-TODO
+```{r}
+plot_original_vs_harmonized_intersections(intersections, filtered_intersections, intersections_original) # TODO: bug fixing -> figure not the same as previously
+ggsave(paste0(in_out_dir, "pieplot_original_vs_harmonization.png"), width = 10, height = 12)
+
+```
 
 # Identification of Core Genes
 
@@ -210,13 +209,15 @@ write.table(duplicated_genes, paste0(in_out_dir,"core_analysis_df.csv"), quote=F
 DT::datatable(duplicated_genes)
 ```
 
+
+TODO: Kikki -> ab hier nochmal kucken. Network enrichment code hab ich auch nicht so wirklich gefunden
+
 # Network Enrichment
 
 ```{r}
 ne_out_dir <- paste0(out_dir, "netenrich/")
 dir.create(file.path(ne_out_dir), showWarnings = FALSE)
 ```
-
 
 ## Generate Networks
 
@@ -243,13 +244,12 @@ for (type in unique(filtered_intersections$Type)) {
 }
 ```
 
-## Visualize Networks
+## Visualizations
 
 ```{r}
 ne_vis_out_dir <- paste0(ne_out_dir, "visualizations/")
 dir.create(file.path(ne_vis_out_dir), showWarnings = FALSE)
 ```
-
 
 ```{r}
 # Plotting the graph
@@ -257,29 +257,90 @@ color_palette <- c("seed" = "lightblue", "new" = "red", "significant only in sin
                    "filtered out for single tissue" = "orange", "drug" = "violet")
 ```
 
+### Tissue Networks
 
-Core network with drugs
+TODO: check if we need all this (drugs code could be removed no?)
 ```{r}
-set.seed(123)
+networks_tissues <- list()
 
-gene_categories <- extract_gene_categories(seeds = duplicated_genes$Gene, 
-                                           ds_results = core_drugs_ds, 
-                                           filtered_intersections = filtered_intersections, 
-                                           all_genes = rownames(data))
+# Loop over each type
+for (type in unique(filtered_intersections$Type)) {
+  set.seed(123)
 
-# Using the updated function
-node_info <- prepare_node_attributes(graph = core_drugs_ds$ds_graph, gene_categories = gene_categories)
-core_drugs_ds$ds_graph <- igraph::set_vertex_attr(core_drugs_ds$ds_graph, "node_attributes", value = node_info$attributes)
-core_drugs_ds$ds_graph <- igraph::set_vertex_attr(core_drugs_ds$ds_graph, "node_type", value = node_info$types)
+  subset <- subset(filtered_intersections, Type == type)
 
-p <- ggnet2(core_drugs_ds$ds_graph, size="degree", color = "node_attributes", shape = "node_type", 
-            color.palette =  color_palette, label=TRUE, label.size = 3) + guides(size = FALSE) + 
-  scale_shape_manual(values = c("circle", "diamond", "triangle"), labels = c("seed", "drug", "exception")) 
-ggsave(paste0(ne_vis_out_dir, "core_genes-drugs_graph.png"), p, width = 35, height = 15, units = "cm", dpi = 150)
-print(p)
+  # Extract gene categories for each type
+  gene_categories <- extract_gene_categories(
+    seeds = subset$Gene,
+    ds_results = de_results_types[["drugs"]][[type]],
+    filtered_intersections = filtered_intersections,
+    all_genes = rownames(data)
+  )
+
+  # Prepare node attributes for the graph without drugs
+  node_info_without_drugs <- prepare_node_attributes(
+    graph = de_results_types[["ami"]][[type]]$ds_graph,
+    gene_categories = gene_categories
+  )
+  
+   # Change names
+  node_info_without_drugs$attributes[node_info_without_drugs$attributes == "filtered out for single tissue"] <- "filtered out after WSI"
+  node_info_without_drugs$attributes[node_info_without_drugs$attributes == "significant only in single tissue"] <- "significant in other tissues"
+
+  # Update graph with node attributes and types for the graph without drugs
+  de_results_types[["ami"]][[type]]$ds_graph <- igraph::set_vertex_attr(de_results_types[["ami"]][[type]]$ds_graph, "node_attributes", value = node_info_without_drugs$attributes)
+  de_results_types[["ami"]][[type]]$ds_graph <- igraph::set_vertex_attr(de_results_types[["ami"]][[type]]$ds_graph, "node_type", value = node_info_without_drugs$types)
+
+  # Plot the graph without drugs
+  p_without_drugs <- ggnet2(de_results_types[["ami"]][[type]]$ds_graph, size = "degree", color = "node_attributes", shape = "node_type", 
+              color.palette = color_palette_new, label = TRUE, label.size = 2, edge.alpha = 0.75, node.alpha = 0.85) + guides(size = FALSE) + 
+  scale_color_manual(name = "Node Attributes", values = color_palette_new) +
+  scale_shape_manual(values = c("circle", "triangle"), labels = c("seed", "exception"), name = "Node Type")
+  networks_tissues[[type]] <- p_without_drugs
+}
 ```
 
-Core network without drugs
+Save networks in the correct format to manuscript
+
+```{r}
+# Cells
+ggsave(paste0(ne_vis_out_dir, "Cells-ami_graph.png"), networks_tissues$Cells, width = 10, height = 7, dpi = 300)
+# EVs
+ggsave(paste0(ne_vis_out_dir, "EVs-ami_graph.png"), networks_tissues$EVs, width = 10, height = 7, dpi = 300)
+# ECM
+ggsave(paste0(ne_vis_out_dir, "ECM-ami_graph.png"), networks_tissues$ECM, width = 10, height = 7, dpi = 300)
+# Bone
+ggsave(paste0(ne_vis_out_dir, "Bone-ami_graph.png"), networks_tissues$Bone, width = 10, height = 7, dpi = 300)
+# Liquid-Biopsy
+ggsave(paste0(ne_vis_out_dir, "Liquid-Biopsy-ami_graph.png"), networks_tissues$`Liquid-Biopsy`, width = 10, height = 7, dpi = 300)
+```
+
+Extract network sizes as table for manuscript
+
+```{r}
+# extract table of network sizes
+network_sizes <- sapply(names(networks_tissues), function(x){
+  tmp <- table(networks_tissues[[x]]$data$color) %>% as.matrix() %>% t() %>% as.data.frame()
+  rownames(tmp) <- x
+  return(tmp)
+})
+
+network_sizes <- rbindlist(network_sizes, fill = TRUE, idcol = TRUE)
+colnames(network_sizes)[1] <- "Tissue"
+network_sizes <- network_sizes[, c("Tissue", "seed", "new", "filtered out after WSI", "significant in other tissues")]
+
+# save network data as excel sheet
+networks_tissues_data <- lapply(networks_tissues, function(x){
+  dt <- x$data[, c("label", "color", "shape")]
+  colnames(dt) <- c("Gene", "Node Type", "Node Attributes")
+  return(dt)
+})
+
+networks_tissues_data[["Core Network"]] <- core_network_data
+openxlsx::write.xlsx(networks_tissues_data, file = paste(ne_vis_out_dir, "network_tissues_data.xlsx"))
+```
+
+### Core Network
 
 ```{r}
 set.seed(123)
@@ -305,597 +366,101 @@ colnames(core_network_data) <- c("Gene", "Node Type", "Node Attributes")
 
 ggsave(paste0(ne_vis_out_dir, "core_genes_graph.png"), p, width = 10, height = 7, dpi = 300)
 print(p)
-
 ```
 
+# Tissue Networks - Functional Enrichment
 
+TODO: network enrichment -> wo hast du das gemacht?
 
-Tissue Networks
-```{r}
+TODO: heatmap of network enrichment -> currently still in old script: Johannes_Heatmap.R script
 
-# Plotting the graph
-color_palette_new <- c("seed" = "lightblue", "new" = "red", "significant in other tissues" = "lightgreen", 
-                   "filtered out after WSI" = "orange", "drug" = "violet")
 
-
-networks_tissues <- list()
-
-# Loop over each type
-for (type in unique(filtered_intersections$Type)) {
-  set.seed(123)
-
-  subset <- subset(filtered_intersections, Type == type)
-
-  # Extract gene categories for each type
-  gene_categories <- extract_gene_categories(
-    seeds = subset$Gene,
-    ds_results = de_results_types[["drugs"]][[type]],
-    filtered_intersections = filtered_intersections,
-    all_genes = rownames(data)
-  )
-
-  # Prepare node attributes for the graph with drugs
-  node_info_with_drugs <- prepare_node_attributes(
-    graph = de_results_types[["drugs"]][[type]]$ds_graph,
-    gene_categories = gene_categories
-  )
-
-  # Update graph with node attributes and types for the graph with drugs
-  de_results_types[["drugs"]][[type]]$ds_graph <- igraph::set_vertex_attr(de_results_types[["drugs"]][[type]]$ds_graph, "node_attributes", value = node_info_with_drugs$attributes)
-  de_results_types[["drugs"]][[type]]$ds_graph <- igraph::set_vertex_attr(de_results_types[["drugs"]][[type]]$ds_graph, "node_type", value = node_info_with_drugs$types)
-
-  # Plot the graph with drugs
-  p_with_drugs <- ggnet2(de_results_types[["drugs"]][[type]]$ds_graph, size = "degree", color = "node_attributes", shape = "node_type", 
-              color.palette = color_palette, label = TRUE, label.size = 2) + guides(size = FALSE) + 
-  scale_shape_manual(values = c("circle", "diamond", "triangle"), labels = c("seed", "drug", "exception")) 
-  #ggsave(paste0(ne_vis_out_dir, type, "-drugs_graph.png"), p_with_drugs, width = 30, height = 15, units = "cm", dpi = 150)
-
-  # Prepare node attributes for the graph without drugs
-  node_info_without_drugs <- prepare_node_attributes(
-    graph = de_results_types[["ami"]][[type]]$ds_graph,
-    gene_categories = gene_categories
-  )
-  
-   # Change names
-  node_info_without_drugs$attributes[node_info_without_drugs$attributes == "filtered out for single tissue"] <- "filtered out after WSI"
-  node_info_without_drugs$attributes[node_info_without_drugs$attributes == "significant only in single tissue"] <- "significant in other tissues"
-
-  # Update graph with node attributes and types for the graph without drugs
-  de_results_types[["ami"]][[type]]$ds_graph <- igraph::set_vertex_attr(de_results_types[["ami"]][[type]]$ds_graph, "node_attributes", value = node_info_without_drugs$attributes)
-  de_results_types[["ami"]][[type]]$ds_graph <- igraph::set_vertex_attr(de_results_types[["ami"]][[type]]$ds_graph, "node_type", value = node_info_without_drugs$types)
-
-  # Plot the graph without drugs
-  p_without_drugs <- ggnet2(de_results_types[["ami"]][[type]]$ds_graph, size = "degree", color = "node_attributes", shape = "node_type", 
-              color.palette = color_palette_new, label = TRUE, label.size = 2, edge.alpha = 0.75, node.alpha = 0.85) + guides(size = FALSE) + 
-  scale_color_manual(name = "Node Attributes", values = color_palette_new) +
-  scale_shape_manual(values = c("circle", "triangle"), labels = c("seed", "exception"), name = "Node Type")
-  networks_tissues[[type]] <- p_without_drugs
-  #ggsave(paste0(ne_vis_out_dir, type, "-ami_graph.png"), p_without_drugs, width = 25, height = 15, units = "cm", dpi = 300)
-}
-
-# Cells
-ggsave(paste0(ne_vis_out_dir, "Cells-ami_graph.png"), networks_tissues$Cells, width = 10, height = 7, dpi = 300)
-# EVs
-ggsave(paste0(ne_vis_out_dir, "EVs-ami_graph.png"), networks_tissues$EVs, width = 10, height = 7, dpi = 300)
-# ECM
-ggsave(paste0(ne_vis_out_dir, "ECM-ami_graph.png"), networks_tissues$ECM, width = 10, height = 7, dpi = 300)
-# Bone
-ggsave(paste0(ne_vis_out_dir, "Bone-ami_graph.png"), networks_tissues$Bone, width = 10, height = 7, dpi = 300)
-# Liquid-Biopsy
-ggsave(paste0(ne_vis_out_dir, "Liquid-Biopsy-ami_graph.png"), networks_tissues$`Liquid-Biopsy`, width = 10, height = 7, dpi = 300)
-
-# extract table of network sizes
-network_sizes <- sapply(names(networks_tissues), function(x){
-  tmp <- table(networks_tissues[[x]]$data$color) %>% as.matrix() %>% t() %>% as.data.frame()
-  rownames(tmp) <- x
-  return(tmp)
-})
-
-network_sizes <- rbindlist(network_sizes, fill = TRUE, idcol = TRUE)
-colnames(network_sizes)[1] <- "Tissue"
-network_sizes <- network_sizes[, c("Tissue", "seed", "new", "filtered out after WSI", "significant in other tissues")]
-
-# save network data as excel sheet
-networks_tissues_data <- lapply(networks_tissues, function(x){
-  dt <- x$data[, c("label", "color", "shape")]
-  colnames(dt) <- c("Gene", "Node Type", "Node Attributes")
-  return(dt)
-})
-
-networks_tissues_data[["Core Network"]] <- core_network_data
-
-library(openxlsx)
-openxlsx::write.xlsx(networks_tissues_data, file = paste(out_dir, "network_tissues_data.xlsx"))
-
-````
-
-## Create Complete Network
-
-```{r}
-combined_graph <- make_empty_graph(directed=FALSE)
-
-names_list <- names(de_results_types$drugs)
-
-for (name in names_list) {
-  current_graph <- de_results_types$drugs[[name]]$ds_graph
-
-  # Loop through each vertex in the current graph
-  for (v in V(current_graph)) {
-    vertex_name <- V(current_graph)$name[v] 
-    vertex_attr <- V(current_graph)$node_attributes[v]
-
-    # Check if a vertex with the same "name" attribute already exists in the combined_graph
-    existing_vertex <- which(V(combined_graph)$name == vertex_name)
-
-    if (length(existing_vertex) == 0) {
-      # Add new vertex
-      combined_graph <- add_vertices(combined_graph, 1, name=vertex_name, node_attributes=vertex_attr, source=name)
-
-    } else {
-      # Update attributes of the existing vertex
-      existing_attr <- V(combined_graph)[existing_vertex]$node_attributes
-
-      if (existing_attr != vertex_attr) {
-        V(combined_graph)[existing_vertex]$node_attributes <- paste(existing_attr, vertex_attr, sep=";")
-      }
-
-      # Update source attribute
-      existing_source <- V(combined_graph)[existing_vertex]$source
-      V(combined_graph)[existing_vertex]$source <- paste(existing_source, name, sep=";")
-    }
-  }
-
-  # Combine edges
-  for (e in E(current_graph)) {
-    source_name <- V(current_graph)[get.edges(current_graph, e)[1]]$name
-    target_name <- V(current_graph)[get.edges(current_graph, e)[2]]$name
-
-    if (!are_adjacent(combined_graph, source_name, target_name)) {
-      combined_graph <- add_edges(combined_graph, c(source_name, target_name))
-    }
-  }
-}
-
-
-V(combined_graph)$node_attributes <- sapply(V(combined_graph)$node_attributes, function(attr) {
-  if (attr %in% c("seed;significant only in single tissue", "significant only in single tissue;seed")) {return("seed")} else {return(attr)}})
-
-V(combined_graph)$shape <- sapply(V(combined_graph)$node_attributes, function(attr) {
-  if (attr == "seed") {return("circle")} else { if (attr == "drug")  {return("diamond")} else {return("triangle")}}})
-```
-
-### Visualize
-
-```{r}
-# Remove nodes that are 'drug'
-non_drug_nodes <- which(V(combined_graph)$node_attributes != "drug")
-combined_nodrug_graph <- induced_subgraph(combined_graph, non_drug_nodes)
-
-set.seed(123)
-p <- ggnet2(combined_nodrug_graph, size=3, shape="shape", color = "node_attributes", color.palette =  c("seed" = "lightblue", "new" = "red", "significant only in single tissue" = "lightgreen", "filtered out for single tissue" = "orange"), 
-            label=TRUE, label.size = 2) + scale_shape_manual(values = c("circle","triangle"),
-                            labels = c("Seed", "Exception")) 
-ggsave(paste0(ne_vis_out_dir, "complete_graph.png"), p, width = 30, height = 15, units = "cm", dpi = 150)
-print(p)
-
-colors_for_levels <- c(
-  "EVs" = "#A3A500",
-  "Cells" = "#F8766D",
-  "Liquid-Biopsy" = "#E76BF3",
-  "Bone" = "#00B0F6",
-  "ECM" = "#00BF7D"
-#  "exception" = "lightgrey",
-#  "drug" = "#7C7C7C"
-)
-
-png(file=paste0(ne_vis_out_dir, "complete_graph_withlabel.png"), height = 2000, width = 3000, res=100)
-draw_pie_chart_network(graph = combined_nodrug_graph, 
-                       attributes = as.data.frame(get.vertex.attribute(combined_nodrug_graph)), 
-                       all_pie_values = names(colors_for_levels),
-                       pie_column = "source",
-                       pie_colors = colors_for_levels,
-                       label = TRUE,
-                       seed = 123,
-                       legend_position = "topleft")
-dev.off()
-png(file=paste0(ne_vis_out_dir, "complete_graph_withoutlabel.png"), height = 2000, width = 3000, res=100)
-draw_pie_chart_network(graph = combined_nodrug_graph, 
-                       attributes = as.data.frame(get.vertex.attribute(combined_nodrug_graph)), 
-                       all_pie_values = names(colors_for_levels),
-                       pie_column = "source",
-                       pie_colors = colors_for_levels,
-                       label = FALSE,
-                       seed = 123,
-                       legend_position = "topleft")
-dev.off()
-```
-
-
-Upset plot of proportions:
-```{r}
-# prepare data
-
-combined_graph_attributes <- as.data.frame(get.vertex.attribute(combined_nodrug_graph))
-combined_graph_attributes <- combined_graph_attributes[, c("name", "source", "node_attributes")]
-combined_graph_attributes <- separate_rows(combined_graph_attributes, source, sep = ";") %>% as.data.table()
-
-combined_graph_attributes_binary <- dcast(combined_graph_attributes, name + node_attributes ~ source, fun.aggregate = length) %>% as.data.frame()
-
-rownames(combined_graph_attributes_binary) <- combined_graph_attributes_binary$name 
-combined_graph_attributes_binary$name <- NULL
-
-tissues <- rev(c("EVs", "Cells", "ECM", "Bone", "Liquid-Biopsy"))
-
-# node attributes colors
-node_attr_colors <- c("seed" = "lightblue", "new" = "red", "significant only in single tissue" = "lightgreen", "filtered out for single tissue" = "orange")
-
-# metadata
-assay_type <- sapply(tissue_list, function(x) x$assay)
-assay_type[assay_type == "in vivo"] <- "In vivo"
-assay_type <- data.frame(set = names(assay_type), approach = assay_type)
-
-assay_colors <- colors_for_levels[unique(assay_type$approach)]
-
-
-# upset plot
-library(ComplexUpset)
-p <- upset(combined_graph_attributes_binary, 
-      tissues, 
-      width_ratio = 0.1,
-      name = "Nodes of Complete Graph",
-      guides = "collect",
-      sort_sets = FALSE,
-      stripes = upset_stripes(mapping = aes(color = approach), 
-                              colors = assay_colors, 
-                              data = assay_type),
-      base_annotations = list(
-        "Intersection size" = intersection_size(
-          counts = TRUE,
-          bar_number_threshold = 1,
-          mapping = aes(fill = node_attributes)
-        ) + scale_fill_manual(values = node_attr_colors, name = "Node Attributes")
-      )
-  
-    )
-
-# add Approach to legend
-p[[3]]$layers[1] <- NULL
-p[[3]] <- p[[3]] + ylab("Set Size")
-p[[4]] <- p[[4]] + guides(color= guide_legend(title = "Approach"))
-p[[2]] <- p[[2]] + ylab("Intersection Size")
-
-p
-
-ggsave(paste(out_dir, "upset_complete_network.png"), width = 10, height = 7)
-
-```
-
-
-### Aggregate
-
-```{r}
-# Define sources to aggregate and to keep separate
-sources_to_aggregate <- names(colors_for_levels)
-sources_to_keep_separate <- unique(V(combined_nodrug_graph)$source[!V(combined_nodrug_graph)$source %in% names(colors_for_levels)])
-
-# Step 1: Create New Graph with Aggregated Nodes
-node_sources <- V(combined_nodrug_graph)$source  # Assuming 'source' is the attribute name
-
-# Creating new nodes for aggregation and keeping separate nodes
-node_counts <- sapply(sources_to_aggregate, function(src) sum(node_sources == src))
-aggregated_node_names <- paste0("Aggregated_", node_counts)
-
-# Create a vector of names for nodes that are not being aggregated
-separate_node_names <- V(combined_nodrug_graph)$name[node_sources %in% sources_to_keep_separate]
-
-new_graph <- graph.empty(n = length(aggregated_node_names) + length(separate_node_names), 
-                         directed = is.directed(combined_graph))
-
-# Setting names and other attributes
-V(new_graph)$name <- c(aggregated_node_names, separate_node_names)
-
-# Setting the 'source' attribute correctly
-# For aggregated nodes, the source is the same as their type
-# For non-aggregated nodes, retain their original source
-aggregated_sources <- rep(sources_to_aggregate, times = 1)
-separate_sources <- V(combined_nodrug_graph)$source[node_sources %in% sources_to_keep_separate]
-V(new_graph)$source <- c(aggregated_sources, separate_sources)
-
-# Copy shape attributes from combined_graph for non-aggregated nodes
-original_shapes <- V(combined_nodrug_graph)$shape
-separate_shapes <- original_shapes[node_sources %in% sources_to_keep_separate]
-
-# For aggregated nodes, set the shape to 'square'
-aggregated_shapes <- rep("square", length(aggregated_node_names))
-
-# Combine the shape attributes for the new_graph
-V(new_graph)$shape <- c(aggregated_shapes, separate_shapes)
-
-# Ensure the length of source vector is equal to the number of vertices in new_graph
-if(length(V(new_graph)$source) != gorder(new_graph)) {
-    stop("Mismatch in number of vertices and length of source attribute vector.")
-}
-
-# Step 2: Add Edges Based on Original Graph
-for(e in E(combined_nodrug_graph)) {
-    edge_vertices <- ends(combined_nodrug_graph, e, names=TRUE)
-    src_name <- ifelse(V(combined_nodrug_graph)[edge_vertices[1]]$source %in% sources_to_aggregate, 
-                       paste0("Aggregated_", sum(node_sources == V(combined_nodrug_graph)[edge_vertices[1]]$source)), 
-                       V(combined_nodrug_graph)[edge_vertices[1]]$name)
-    tgt_name <- ifelse(V(combined_nodrug_graph)[edge_vertices[2]]$source %in% sources_to_aggregate, 
-                       paste0("Aggregated_", sum(node_sources == V(combined_nodrug_graph)[edge_vertices[2]]$source)), 
-                       V(combined_nodrug_graph)[edge_vertices[2]]$name)
-    
-    src <- which(V(new_graph)$name == src_name)
-    tgt <- which(V(new_graph)$name == tgt_name)
-    
-    if(length(src) > 0 && length(tgt) > 0 && !any(are_adjacent(new_graph, src, tgt))) {
-        new_graph <- add_edges(new_graph, c(src, tgt))
-    }
-}
-
-# Removing self-loops
-self_loops <- which(sapply(E(new_graph), function(e) ends(new_graph, e)[1] == ends(new_graph, e)[2]))
-new_graph <- delete.edges(new_graph, self_loops)
-
-```
-
-```{r}
-png(file=paste0(ne_vis_out_dir, "aggregated-complete_graph_withlabel.png"), height = 2000, width = 3000, res=100)
-draw_pie_chart_network(graph = new_graph, 
-                       attributes = as.data.frame(get.vertex.attribute(new_graph)), 
-                       all_pie_values = names(colors_for_levels),
-                       pie_column = "source",
-                       pie_colors = colors_for_levels,
-                       label = TRUE,
-                       seed = 123,
-                       legend_position = "topleft")
-dev.off()
-```
-
-#### Check for drugs again
-
-```{r}
-non_agg <- V(new_graph)$name[!startsWith(V(new_graph)$name, "Agg")]
-single_tissue_exc <- setdiff(non_agg, duplicated_genes$Gene)
-
-drugs_agg <- get_top_drugs(genes = non_agg, number = 1000L)
-```
-
-
-
-# Scorings
+# Core Network - Scorings
 
 ## Network Scorings
 
 ```{r}
 network_scoring <- score_gene_network(g = core_ami_ds$ds_graph, attribute_name = "name")
 network_scoring <- network_scoring[, c("IDs", colnames(network_scoring)[colnames(network_scoring) != "IDs"]), with = FALSE]
-
-create_top_genes_heatmap(scoring_df = network_scoring, 
-                         output_file = paste0(ne_vis_out_dir, "top_genes_network_heatmap.png"))
 ```
 
 ## Enrichement Scorings
 
 ```{r}
 enrich_scoring <- score_genes_enrichment(genes = core_ami_ds$ds_genes)
-
-create_top_genes_heatmap(scoring_df = enrich_scoring, 
-                         output_file = paste0(ne_vis_out_dir, "top_genes_enrich_heatmap.png"))
 ```
 
 ## Accessibility Scorings
 
 ```{r}
-library(readxl)
-access_scoring <- read_excel("data/Accessibility_BoneAbundance_Scores.xlsx", sheet = "accessibility")
+access_scoring <- read_excel("data/input/Accessibility_BoneAbundance_Scores.xlsx", sheet = "accessibility")
 access_scoring[access_scoring$IDs == "TGM2", "IDs"] <- "HEL-S-45"
 ```
 
 ## Bone Abundance Scorings
 
 ```{r}
-boneabund_scoring <- read_excel("data/Accessibility_BoneAbundance_Scores.xlsx", sheet = "bone abundance")
+boneabund_scoring <- read_excel("data/input/Accessibility_BoneAbundance_Scores.xlsx", sheet = "bone abundance")
 boneabund_scoring[boneabund_scoring$IDs == "TGM2", "IDs"] <- "HEL-S-45"
-
 ```
 
 ## Digest Results
 
 ```{r}
-digest_results <- read.csv("data/core_sc_results.csv")
+digest_results <- read.csv("data/input/core_sc_results.csv")
 colnames(digest_results)[1] <- "IDs"
 digest_long <- melt(data.table(digest_results), id.vars = "IDs", variable.name = "type", value.name = "score")
 digest_medians <- digest_long %>% group_by(IDs) %>% summarise(median_score = median(score)) %>% as.data.table()
 colnames(digest_medians)[2] <- "DIGEST"
-
 ```
-
 
 ## Literature Results
 
 ```{r}
-literature_results <- read_excel("data/literature_versand.xlsx", sheet = "Tabelle1") # check if current version with SERPINA1 = beneficial
+literature_results <- read_excel("data/input/literature_versand.xlsx", sheet = "Tabelle1") # check if current version with SERPINA1 = beneficial
 literature_results <- as.data.table(literature_results)
 colnames(literature_results)[2] <- "Literature"
 ```
 
 ## Drugs
+
 ```{r}
 drugs <- get_top_drugs(genes = core_ami_ds$ds_genes, number = 1000L)
-
-calculate_drug_connections <- function(drugs, gene_ids) {
-  # Split the 'hasEdgesTo' column and count occurrences
-  gene_counts <- strsplit(as.character(drugs$hasEdgesTo), ",") %>%
-    unlist() %>%
-    table() %>%
-    as.data.frame()
-
-  # Rename columns for clarity
-  names(gene_counts) <- c("IDs", "drugs")
-
-  # Create a complete list of gene_ids with 0 counts for those not in gene_counts
-  complete_gene_list <- data.frame(IDs = gene_ids, drugs = 0)
-  gene_counts <- merge(complete_gene_list, gene_counts, by = "IDs", all.x = TRUE)
-  gene_counts$drugs <- rowSums(gene_counts[, c("drugs.x", "drugs.y")], na.rm = TRUE)
-
-  # Drop the extra columns after merging
-  gene_counts <- gene_counts[, c("IDs", "drugs")]
-
-  # Add ranking based on the number of drugs connected
-  gene_counts$drugs_Rank <- rank(-gene_counts$drugs, ties.method = "average")
-
-  return(gene_counts)
-}
-
-
 drug_scores <- calculate_drug_connections(drugs, network_scoring$IDs)
 ```
 
+## Final Overview Heatmap of Scores
 
-## Combined
-```{r}
-create_combined_heatmap(network_scoring, enrich_scoring, 
-                        output_file = paste0(ne_vis_out_dir, "top_genes_combined_heatmap.png"))
-```
-
-
-## Heatmap of Median Network Ranks, Median Enrichment Ranks, and ...
+Generate combined data frame of all ranks:
 
 ```{r}
-# functions
-check_vertex <- function(vertex, core_graph, combined_graph) {
-  if (V(core_graph)[vertex]$node_attributes == "new") {
-    return("new")
-  } else if (vertex %in% V(combined_graph)$name) {
-    return(V(combined_graph)[vertex]$source)
-  } else {
-    return("problem")
-  }
-}
+all_ranks <- generate_combined_ranking_dt(network_scoring, enrich_scoring, access_scoring, boneabund_scoring)
 
-get_gene_drug_clustering <- function(drugs, all_ranks){
-  # 1. Parse the 'drugs' DataFrame
-  drugs_list <- strsplit(as.character(drugs$hasEdgesTo), ",")
-  names(drugs_list) <- drugs$label
-  
-  # 2. Create Binary Matrix for Gene-Drug Associations
-  gene_drug_matrix <- do.call(cbind, lapply(drugs_list, function(drug_genes) {
-  +(all_ranks$IDs %in% drug_genes)
-  }))
-  rownames(gene_drug_matrix) <- all_ranks$IDs
-  colnames(gene_drug_matrix) <- names(drugs_list)
-  
-  # 3. Calculate Distance Matrix
-  # Here, Jaccard distance is used as an example. You can choose other metrics as appropriate.
-  gene_distance_matrix <- as.dist(1 - proxy::simil(gene_drug_matrix, method = "jaccard"))
-  
-  # 4. Cluster the Genes
-  gene_clustering <- hclust(gene_distance_matrix)
-  return(gene_clustering)
-}
-
-get_median_rank_data <- function(scoring_dt, rank_string = "Rank"){
-  rank_colnames <- colnames(scoring_dt)[str_detect(colnames(scoring_dt), "_Rank")]
-  ranks <- scoring_dt[, c("IDs", rank_colnames), with = FALSE]
-  ranks_long <- melt(ranks, id.vars = "IDs", value.name = "Rank", variable.name = "Measure")
-  ranks_median <- ranks_long %>% group_by(IDs) %>% summarize(Rank= median(Rank)) %>% as.data.table()
-  colnames(ranks_median) <- c("IDs", rank_string)
-  return(ranks_median)
-}
-```
-
-
-```{r}
-# prepare data (median of individual ranks)
-
-# get median over all network ranks
-library(stringr)
-network_medians <- get_median_rank_data(network_scoring, rank_string = "Network_Rank")
-enrich_medians <- get_median_rank_data(enrich_scoring, "Enrich_Rank")
-access_medians <- get_median_rank_data(as.data.table(access_scoring), "Accessibility_Rank")
-boneabund_medians <- get_median_rank_data(as.data.table(boneabund_scoring), "BoneAbundance_Rank")
-
-# merge scores
-all_ranks <- merge(enrich_medians, network_medians, by = "IDs") %>% as.data.frame()
-all_ranks <- merge(all_ranks, access_medians, by = "IDs") %>% as.data.frame()
-all_ranks <- merge(all_ranks, boneabund_medians, by = "IDs") %>% as.data.frame()
-
-```
-
-```{r}
-
-library(circlize)
-# rank heatmap
+# Save order of IDs
 ids_order <- all_ranks$IDs
+
+# Process data to correct format
 row.names(all_ranks) <- all_ranks$IDs
 all_ranks$IDs <- NULL
 colnames(all_ranks) <- c("Enrichment Rank", "Network Rank", "Accessibility Rank", "Bone Abundance Rank")
-# color scale for ranks
+
+# Color Scale for Ranks
 col_fun <- colorRamp2(c(1,10, max(all_ranks)), c("#4BA999", "#FFC107", "white"))
 nr <- nrow(all_ranks)
+```
 
-# annotations
-# tissue annotation
+Generate annotations for heatmap:
+
+```{r}
+# tissue and assay annotation
 att_df <- as.data.frame(get.vertex.attribute(combined_nodrug_graph))
 att_df_core <- att_df[att_df$name %in% V(core_ami_ds$ds_graph)$name,]
 tissue_annotation <- att_df_core$source
 names(tissue_annotation) <- att_df_core$name
-# tissue_annotation <- sapply(V(core_ami_ds$ds_graph)$name, 
-#                        check_vertex, 
-#                        core_graph = core_drugs_ds$ds_graph, 
-#                        combined_graph = combined_graph)
-# 
-# # extract for genes with problem from intersections_all
-# tissue_annotation <- sapply(names(tissue_annotation), function(x) {
-#   if(tissue_annotation[x] == "problem"){
-#       paste(unique(intersections_all[intersections_all$Gene == x, ]$Type), collapse = ";")
-#   } else return(tissue_annotation[[x]])
-# })
-# 
 
-
-# create temp directory for saving pie chart
-out_dir <- "/Users/lisiarend/Desktop/bone-proteomics-review/data/results/"
-out_tmp_tissue <- paste0(out_dir, "/temp_pie_charts_tissue")
-out_tmp_assay <- paste0(out_dir, "/temp_pie_charts_assay")
-dir.create(out_tmp_tissue)
-dir.create(out_tmp_assay)
-sapply(names(tissue_annotation[!tissue_annotation %in% c("new", "problem")]), function(gene){
-  tissues <- strsplit(tissue_annotation[gene], ";")[[1]]
-  data <- data.frame(tissue = tissues, value = rep(1, length(tissues)))
-  data$assay <- sapply(data$tissue, function(x) tissue_list[[x]]$assay)
-  # replace in vivo by "In vivo"
-  data$assay[data$assay == "in vivo"] <- "In vivo"
-  # tissue piechart
-  ggplot(data, aes(x = "", y = value, fill = tissue)) + geom_bar(stat = "identity", width = 1) +
-  coord_polar("y", start = 0) + scale_fill_manual(values = colors_for_levels[tissues]) + theme_void() +   theme(legend.position = "none")
-  ggsave(paste0(out_tmp_tissue, "/", gene, ".png"), width = 1, height = 1)
-  
-  # assay piechart
-  ggplot(unique(data[, c("value", "assay")]), aes(x = "", y = value, fill = assay)) + geom_bar(stat = "identity", width = 1) +
-  coord_polar("y", start = 0) + scale_fill_manual(values = colors_for_levels[unique(data$assay)]) + theme_void() +   theme(legend.position = "none")
-  ggsave(paste0(out_tmp_assay, "/", gene, ".png"), width = 1, height = 1)
-  
-})
-
-pie_charts_tissue_files <- list.files(out_tmp_tissue, full.names = TRUE)
-pie_charts_assay_files <- list.files(out_tmp_assay, full.names = TRUE)
-
-# rearrange vector for problem and new 
-names(pie_charts_tissue_files) <- sapply(list.files(out_tmp_tissue), function(x) strsplit(x, ".png")[[1]])
-names_new_problem_genes <- ids_order[! ids_order %in% names(tissue_annotation)]
-new_problem_genes <- rep("", length(names_new_problem_genes))
-names(new_problem_genes) <- names_new_problem_genes
-
-tissue_anno_vec <- c(pie_charts_tissue_files, new_problem_genes)
-tissue_anno_vec <- tissue_anno_vec[ids_order]
-
-# assay annotation
-names(pie_charts_assay_files) <- sapply(list.files(out_tmp_assay), function(x) strsplit(x, ".png")[[1]])
-assay_anno_vec <- c(pie_charts_assay_files, new_problem_genes)
-assay_anno_vec <- assay_anno_vec[ids_order]
+tmp <- generate_tissue_assay_file_anno_vec(tissue_annotation, tissue_list, ids_order, colors_for_levels, out_dir)
+tissue_anno_vec <- tmp$tissue
+assay_anno_vec <- tmp$assay
 
 # type annotation (seed, new, filtered out for single tissue)
 type_annotation <- igraph::as_data_frame(core_drugs_ds$ds_graph, what= "vertices")["node_attributes"]
@@ -904,7 +469,6 @@ names(type_annotation) <- ids_order
 
 # drug annotation
 drug_annotation <- drug_scores[match(ids_order, drug_scores$IDs), "drugs"]
-
 drug_colors <- colorRamp2(c(0, max(drug_annotation)), c("white", "red"))
 
 # digest annotation
@@ -916,6 +480,7 @@ literature_results <- literature_results[match(ids_order, literature_results$IDs
 literature_colors <- c("grey70","#CC0066","#4DAF4A","#984EA3")
 names(literature_colors) <- unique(literature_results$Literature)
 
+# generate one ComplexHeatmap rowAnnotation of all single annotations
 right_annotation <- rowAnnotation(DIGEST = anno_simple(digest_medians$DIGEST, col = col_fun_digest, gp = gpar(col = "black")),
                                   Drugs = anno_simple(drug_annotation, pch =  paste(drug_annotation), col = drug_colors, pt_size = unit(0.4, "cm"), gp = gpar(col = "black")),
                                   Literature = literature_results$Literature,
@@ -928,7 +493,11 @@ right_annotation <- rowAnnotation(DIGEST = anno_simple(digest_medians$DIGEST, co
                                   gp = gpar(col = "black"),
                                   show_legend = FALSE,
                                   gap = unit(0.2, "cm"))
+```
 
+Plot heatmap:
+
+```{r}
 scoring_heatmap <- Heatmap(as.matrix(all_ranks),
   name = "measure",
   col = col_fun,
@@ -948,11 +517,12 @@ scoring_heatmap <- Heatmap(as.matrix(all_ranks),
   width = unit(6, "cm")
 )
 
-
-
 ht_opt$ROW_ANNO_PADDING <- unit(0.5, "cm")
+```
 
+Generate legends:
 
+```{r}
 tissue_legend <- Legend(labels = names(tissue_list), title = "Tissue", legend_gp = gpar(fill = colors_for_levels[names(tissue_list)], type = "grid"))
 assays <- c("In vitro", "In vivo")
 assay_legend <- Legend(labels = assays, title = "Assay", legend_gp = gpar(fill = colors_for_levels[assays], type = "grid"))
@@ -964,15 +534,20 @@ drug_legend <- Legend(col_fun = drug_colors, title = "Drugs", at = c(0, max(drug
 digest_legend <- Legend(title =  "Significance Contribution (DIGEST)",
                         col_fun = col_fun_digest)
 literature_legend <- Legend(labels = unique(literature_results$Literature), title = "Literature", legend_gp = gpar(fill = literature_colors), type = "grid")
+```
 
+Save heatmap: 
 
-png(paste0(out_dir, "scoring_heatmap.png"), width=11,height=12,units="in",res=1200)
+```{r}
+# TODO: change to eps
+png(paste0(out_dir, "scoring/scoring_heatmap.png"), width=11,height=12,units="in",res=1200)
 draw(scoring_heatmap, annotation_legend_list = list(heatmap_legend, digest_legend, drug_legend, literature_legend, type_legend, tissue_legend, assay_legend), annotation_legend_side = "right", ht_gap = unit(0.5, "cm"), auto_adjust = TRUE)
 dev.off()
 ```
 
+Generate excel sheet with scoring information: 
+
 ```{r}
-# combined excel sheet with all information about the heatmap
 # save scores
 all_ranks$IDs <- row.names(all_ranks)
 
@@ -1000,8 +575,6 @@ final_ranks <- merge(final_ranks, literature_results, by = "IDs")
 network_scoring <- network_scoring[match(enrich_scoring$IDs, network_scoring$IDs),]
 network_scoring <- network_scoring[, c(6, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11)]
 
-# TODO: add drugs
-
 data_names <- list(
   "Overview" = final_ranks,
   "Network Scores + Ranks" = network_scoring,
@@ -1011,15 +584,12 @@ data_names <- list(
   "DIGEST" = digest_results,
   "Drugs" = drugs
 )
-library(openxlsx)
-openxlsx::write.xlsx(data_names, file = paste(out_dir, "scoring_heatmap_data.xlsx"))
-
+openxlsx::write.xlsx(data_names, file = paste(out_dir, "scoring/scoring_heatmap_data.xlsx"))
 ```
 
+# What is with this?
 
-#### Check Drugs
-
-# Enrichment Term Analysis
+## Enrichment Term Analysis
 
 ```{r}
 prop <- fread("../BoneBiomarkerReview/data/results/go_networks/term_intersections_proportions.tsv")
@@ -1100,7 +670,6 @@ dev.off()
 save_results(drugs_ds, "cell_adhesion_genes", "")
 ```
 
-# jgjdg
 
 ```{r}
 prop2 <- prop[prop$term_name == "collagen-containing extracellular matrix",]

@@ -8,11 +8,11 @@ original_study_file <- "data/Protein_lists_UHH_v6.xlsx" # TODO: remove two first
 
 tissue_list <- list("EVs"= list("label" = "EVs",
                                 "assay" = "In vitro"),
-                    "Cells"= list("label" = "cells",
+                    "Cells"= list("label" = "Cells",
                                   "assay" = "In vitro"), 
                     "ECM"= list("label" = "ECM",
                                 "assay" = "In vitro"), 
-                    "Bone"= list("label" = "bone",
+                    "Bone"= list("label" = "Bone",
                                  "assay" = "In vivo"), 
                     "Liquid-Biopsy" = list("label" = c("Serum-Plasma", "Plasma-EVs"),
                                               "assay" = "In vivo"))

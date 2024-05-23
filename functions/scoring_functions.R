@@ -112,128 +112,123 @@ extract_top_genes_union <- function(scoring_df) {
   return(list(top_genes_union = top_genes_union, top_genes_data = top_genes_data))
 }
 
-
-#' Create Top Genes Heatmap
-#'
-#' Identifies the top 10 genes based on each ranking metric in a scoring dataframe, creates a union of these genes, 
-#' extracts their ranking data, and generates a heatmap displaying the ranks.
-#'
-#' @param scoring_df A dataframe with gene IDs and their ranks across various metrics.
-#' @param output_file Optional file path to save the heatmap.
-#' @return A ggplot object representing the heatmap.
-#' @importFrom ggplot2 ggplot geom_tile geom_text scale_fill_gradient theme_minimal labs theme
-#' @importFrom reshape2 melt
-#' @examples
-#' network_scoring <- score_gene_network(g = core_ami_ds$ds_graph, attribute_name = "name")
-#' enrich_scoring <- score_genes_enrichment(genes = core_ami_ds$ds_genes)
-#' create_top_genes_heatmap(network_scoring)
-#' @export
-create_top_genes_heatmap <- function(scoring_df, output_file = NULL) {
+calculate_drug_connections <- function(drugs, gene_ids) {
+  # Split the 'hasEdgesTo' column and count occurrences
+  gene_counts <- strsplit(as.character(drugs$hasEdgesTo), ",") %>%
+    unlist() %>%
+    table() %>%
+    as.data.frame()
   
-  top_genes_data <- extract_top_genes_union(scoring_df = scoring_df)$top_genes_data
+  # Rename columns for clarity
+  names(gene_counts) <- c("IDs", "drugs")
   
-  # Melt the data for heatmap
-  melted_data <- melt(top_genes_data, id.vars = "IDs")
+  # Create a complete list of gene_ids with 0 counts for those not in gene_counts
+  complete_gene_list <- data.frame(IDs = gene_ids, drugs = 0)
+  gene_counts <- merge(complete_gene_list, gene_counts, by = "IDs", all.x = TRUE)
+  gene_counts$drugs <- rowSums(gene_counts[, c("drugs.x", "drugs.y")], na.rm = TRUE)
   
-  # Calculate the sum of ranks for each gene
-  sum_ranks <- aggregate(. ~ IDs, melted_data, function(x) sum(x, na.rm = TRUE))
+  # Drop the extra columns after merging
+  gene_counts <- gene_counts[, c("IDs", "drugs")]
   
-  # Order the genes by sum of ranks
-  ordered_genes <- sum_ranks[order(sum_ranks$value), "IDs"]
+  # Add ranking based on the number of drugs connected
+  gene_counts$drugs_Rank <- rank(-gene_counts$drugs, ties.method = "average")
   
-  # Reorder the melted data based on the sum of ranks
-  melted_data$IDs <- factor(melted_data$IDs, levels = ordered_genes)
-  
-  # Create the heatmap with values
-  p <- ggplot(melted_data, aes(x = IDs, y = variable, fill = value)) + 
-    geom_tile() +
-    geom_text(aes(label = round(value, 2)), size = 3, vjust = 1) + # Add text labels
-    scale_fill_gradient(low = "darkgreen", high = "grey") +
-    theme_minimal() + 
-    theme(
-      panel.background = element_rect(fill = "white", colour = "white"),
-      plot.background = element_rect(fill = "white", colour = "white")
-    ) +
-    labs(title = "Top Gene Ranks Heatmap", x = "Gene ID", y = "Rank Metric", fill = "Rank") +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1), axis.text.y = element_text(angle = 0, hjust = 1))
-  
-  # Optionally save the heatmap
-  if (!is.null(output_file)) {
-    ggsave(output_file, plot = p, width = 10, height = 6, units = "in", dpi = 300)
-  }
-  
-  return(p)
+  return(gene_counts)
 }
 
-#' Create Combined Heatmap from Network and Enrichment Scorings
-#'
-#' Combines top genes from network and enrichment scorings into a single heatmap. 
-#' This function extracts top genes from both network and enrichment scoring dataframes, 
-#' merges their data, and then creates a heatmap showing the ranks of these genes.
-#'
-#' @param network_scoring A scoring dataframe obtained from network analysis.
-#' @param enrich_scoring A scoring dataframe obtained from enrichment analysis.
-#' @param output_file Optional file path to save the heatmap.
-#' @return A ggplot object representing the combined heatmap.
-#' @importFrom ggplot2 ggplot geom_tile geom_text scale_fill_gradient theme_minimal labs theme
-#' @importFrom reshape2 melt
-#' @examples
-#' network_scoring <- score_gene_network(g = core_ami_ds$ds_graph, attribute_name = "name")
-#' enrich_scoring <- score_genes_enrichment(genes = core_ami_ds$ds_genes)
-#' create_combined_heatmap(network_scoring, enrich_scoring)
-#' @export
-create_combined_heatmap <- function(network_scoring, enrich_scoring, output_file = NULL) {
-  # Extract top genes from both scorings
-  get_top_genes <- function(scoring_df) {
-    top_genes <- lapply(grep("_Rank$", names(scoring_df), value = TRUE), function(metric) {
-      head(sort(scoring_df[[metric]]), 10)
-    })
-    unique(unlist(top_genes))
+check_vertex <- function(vertex, core_graph, combined_graph) {
+  if (V(core_graph)[vertex]$node_attributes == "new") {
+    return("new")
+  } else if (vertex %in% V(combined_graph)$name) {
+    return(V(combined_graph)[vertex]$source)
+  } else {
+    return("problem")
   }
-  
-  top_genes_network <- extract_top_genes_union(scoring_df = network_scoring)
-  top_genes_enrich <- extract_top_genes_union(scoring_df = enrich_scoring)
-  
-  # Combine and deduplicate the list of genes
-  all_top_genes <- unique(c(top_genes_network$top_genes_union, top_genes_enrich$top_genes_union))
-  
-  # Merge the scoring data for these genes
-  merged_data <- cbind(
-    network_scoring[network_scoring$IDs %in% all_top_genes, ],
-    enrich_scoring[enrich_scoring$IDs %in% all_top_genes, ] )
-  
-  cols <- union(names(top_genes_network$top_genes_data), names(top_genes_enrich$top_genes_data))
-  merged_data <- merged_data[, ..cols]
-  
-  # Melt the data for the heatmap
-  melted_data <- melt(merged_data, id.vars = "IDs")
-  
-  # Calculate the sum of ranks for each gene
-  sum_ranks <- aggregate(. ~ IDs, melted_data, function(x) sum(x, na.rm = TRUE))
-  
-  # Order the genes by sum of ranks
-  ordered_genes <- sum_ranks[order(sum_ranks$value), "IDs"]
-  
-  # Reorder the melted data based on the sum of ranks
-  melted_data$IDs <- factor(melted_data$IDs, levels = ordered_genes)
-  
-  # Create the heatmap
-  p <- ggplot(melted_data, aes(x = IDs, y = variable, fill = value)) + 
-    geom_tile() +
-    geom_text(aes(label = round(value, 2)), size = 3, vjust = 1) + 
-    scale_fill_gradient(low = "darkgreen", high = "grey") +
-    theme_minimal() + 
-    theme(
-      panel.background = element_rect(fill = "white", colour = "white"),
-      plot.background = element_rect(fill = "white", colour = "white")
-    ) +
-    labs(title = "Combined Top Gene Ranks Heatmap", x = "Gene ID", y = "Rank Metric", fill = "Rank") +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1), axis.text.y = element_text(angle = 0, hjust = 1))
-  
-  # Optionally save the heatmap
-  if (!is.null(output_file)) {
-    ggsave(output_file, plot = p, width = 10, height = 6, units = "in", dpi = 300)
-  }
-  
-  return(p)
 }
+
+get_gene_drug_clustering <- function(drugs, all_ranks){
+  # 1. Parse the 'drugs' DataFrame
+  drugs_list <- strsplit(as.character(drugs$hasEdgesTo), ",")
+  names(drugs_list) <- drugs$label
+  
+  # 2. Create Binary Matrix for Gene-Drug Associations
+  gene_drug_matrix <- do.call(cbind, lapply(drugs_list, function(drug_genes) {
+    +(all_ranks$IDs %in% drug_genes)
+  }))
+  rownames(gene_drug_matrix) <- all_ranks$IDs
+  colnames(gene_drug_matrix) <- names(drugs_list)
+  
+  # 3. Calculate Distance Matrix
+  # Here, Jaccard distance is used as an example. You can choose other metrics as appropriate.
+  gene_distance_matrix <- as.dist(1 - proxy::simil(gene_drug_matrix, method = "jaccard"))
+  
+  # 4. Cluster the Genes
+  gene_clustering <- hclust(gene_distance_matrix)
+  return(gene_clustering)
+}
+
+get_median_rank_data <- function(scoring_dt, rank_string = "Rank"){
+  rank_colnames <- colnames(scoring_dt)[str_detect(colnames(scoring_dt), "_Rank")]
+  ranks <- scoring_dt[, c("IDs", rank_colnames), with = FALSE]
+  ranks_long <- melt(ranks, id.vars = "IDs", value.name = "Rank", variable.name = "Measure")
+  ranks_median <- ranks_long %>% group_by(IDs) %>% summarize(Rank= median(Rank)) %>% as.data.table()
+  colnames(ranks_median) <- c("IDs", rank_string)
+  return(ranks_median)
+}
+
+generate_combined_ranking_dt <- function(network_scoring, enrich_scoring, access_scoring, boneabund_scoring){
+  # get median over all network ranks
+  network_medians <- get_median_rank_data(network_scoring, rank_string = "Network_Rank")
+  enrich_medians <- get_median_rank_data(enrich_scoring, "Enrich_Rank")
+  access_medians <- get_median_rank_data(as.data.table(access_scoring), "Accessibility_Rank")
+  boneabund_medians <- get_median_rank_data(as.data.table(boneabund_scoring), "BoneAbundance_Rank")
+  
+  # merge scores
+  all_ranks <- merge(enrich_medians, network_medians, by = "IDs") %>% as.data.frame()
+  all_ranks <- merge(all_ranks, access_medians, by = "IDs") %>% as.data.frame()
+  all_ranks <- merge(all_ranks, boneabund_medians, by = "IDs") %>% as.data.frame()
+  
+  return(all_ranks)
+}
+
+generate_tissue_assay_file_anno_vec <- function(tissue_annotation, tissue_list, ids_order, colors_for_levels, out_dir){
+  # create temp directory for saving pie chart
+  out_tmp_tissue <- paste0(out_dir, "/scoring/temp_pie_charts_tissue")
+  out_tmp_assay <- paste0(out_dir, "/scoring/temp_pie_charts_assay")
+  dir.create(out_tmp_tissue)
+  dir.create(out_tmp_assay)
+  
+  sapply(names(tissue_annotation[!tissue_annotation %in% c("new", "problem")]), function(gene){
+    tissues <- strsplit(tissue_annotation[gene], ";")[[1]]
+    data <- data.frame(tissue = tissues, value = rep(1, length(tissues)))
+    data$assay <- sapply(data$tissue, function(x) tissue_list[[x]]$assay)
+    # tissue piechart
+    ggplot(data, aes(x = "", y = value, fill = tissue)) + geom_bar(stat = "identity", width = 1) +
+      coord_polar("y", start = 0) + scale_fill_manual(values = colors_for_levels[tissues]) + theme_void() +   theme(legend.position = "none")
+    ggsave(paste0(out_tmp_tissue, "/", gene, ".png"), width = 1, height = 1)
+    
+    # assay piechart
+    ggplot(unique(data[, c("value", "assay")]), aes(x = "", y = value, fill = assay)) + geom_bar(stat = "identity", width = 1) +
+      coord_polar("y", start = 0) + scale_fill_manual(values = colors_for_levels[unique(data$assay)]) + theme_void() +   theme(legend.position = "none")
+    ggsave(paste0(out_tmp_assay, "/", gene, ".png"), width = 1, height = 1)
+  })
+  
+  pie_charts_tissue_files <- list.files(out_tmp_tissue, full.names = TRUE)
+  pie_charts_assay_files <- list.files(out_tmp_assay, full.names = TRUE)
+  
+  # rearrange vector for problem and new 
+  names(pie_charts_tissue_files) <- sapply(list.files(out_tmp_tissue), function(x) strsplit(x, ".png")[[1]])
+  names_new_problem_genes <- ids_order[! ids_order %in% names(tissue_annotation)]
+  new_problem_genes <- rep("", length(names_new_problem_genes))
+  names(new_problem_genes) <- names_new_problem_genes
+  
+  tissue_anno_vec <- c(pie_charts_tissue_files, new_problem_genes)
+  tissue_anno_vec <- tissue_anno_vec[ids_order]
+  
+  # assay annotation
+  names(pie_charts_assay_files) <- sapply(list.files(out_tmp_assay), function(x) strsplit(x, ".png")[[1]])
+  assay_anno_vec <- c(pie_charts_assay_files, new_problem_genes)
+  assay_anno_vec <- assay_anno_vec[ids_order]
+  return(list("tissue" = tissue_anno_vec, "assay" = assay_anno_vec))
+}
+

@@ -140,6 +140,42 @@ get_intersection_dt_double_weighting <- function(data, data_info, label, value, 
 }
 
 
+#' Get Intersection Table for All Tissues
+#'
+#' @param data The data frame to be processed.
+#' @param data_info Data frame containing assay information.
+#' @param tissue_list 
+#' @param weighting 
+#'
+#' @return data table of intersections of all tissues
+#' @export
+#'
+calculate_intersections <- function(data, data_info, tissue_list, weighting){
+  # Initialize a list to store intermediate data frames
+  intersections_list <- list()
+  
+  for(tissue in names(tissue_list)) {
+    if(weighting == "single") {
+      intersections_list[[tissue]] <- get_intersection_dt(data = data, data_info = data_info, label = "Tissue", 
+                                                          value = c(tissue_list[[tissue]]$label), 
+                                                          assay = tissue_list[[tissue]]$assay, 
+                                                          type = tissue)
+    } else if(weighting == "double") {
+      intersections_list[[tissue]] <- get_intersection_dt_double_weighting(data = data, data_info = data_info, label = "Tissue", 
+                                                                           value = c(tissue_list[[tissue]]$label), 
+                                                                           assay = tissue_list[[tissue]]$assay, 
+                                                                           type = tissue)
+    } else {
+      stop("Exiting RMarkdown due to wrong/missing value for 'weighting' inside config.R.")
+    }
+  }
+  
+  # Combine all data frames into one
+  intersections <- do.call(rbind, intersections_list)
+  return(intersections)
+}
+
+
 #' Select Intersections
 #'
 #' This function selects intersections based on a given threshold and weighting criterion from a subset study dataframe.
@@ -182,6 +218,18 @@ select_intersections <- function(subset_study_df, intersection_thr = 3, weightin
     distinct()
   
   return(intersection)
+}
+
+filter_intersections <- function(intersections, intersection_thr, weighting_thr){
+  # Group by 'Type' and apply select_intersections() function to each group
+  resulting_data_frames <- intersections %>%
+    group_by(Type) %>%
+    do(select_intersections(., intersection_thr=intersection_thr, weighting_thr=weighting_thr)) %>%
+    ungroup()
+  
+  # Combine resulting data frames into one
+  filtered_intersections <- bind_rows(resulting_data_frames)
+  return(filtered_intersections)
 }
 
 ### Plots
@@ -242,3 +290,55 @@ plot_weighted_intersection <- function(weighted_dt, min_intersected, min_weight)
   return(list(Plot = p, Data = dt))
 }
 
+plot_original_vs_harmonized_intersections <- function(harmonized_intersections, harmonized_intersections_filtered, original_intersections){
+  harmonized_dt <- harmonized_intersections[, c("Gene", "Intersected", "Type")]
+  colnames(harmonized_dt) <- c("Gene", "ProHarMeD", "Type")
+  original_dt <- original_intersections[, c("Gene", "Intersected", "Type")]
+  colnames(original_dt) <- c("Gene", "Original", "Type")
+  
+  dt <- merge(harmonized_dt, original_dt, by = c("Gene", "Type"), all.x = TRUE, all.y = TRUE)
+  dt$ProHarMeD[is.na(dt$ProHarMeD)] <- 0
+  dt$Original[is.na(dt$Original)] <- 0
+  
+  # Define base colors for each Type
+  base_colors <- c(
+    "EVs" = "#A3A500",
+    "Cells" = "#F8766D",
+    "Liquid-Biopsy" = "#E76BF3",
+    "Bone" = "#00B0F6",
+    "ECM" = "#00BF7D"
+  )
+  
+  # Pie Chart of All Intersections
+  tmp <- dt %>% group_by(ProHarMeD, Original, Type) %>% summarize(n())
+  tmp <- tmp[tmp$ProHarMeD != 0 & tmp$Original != 0,]
+  colnames(tmp) <- c("ProHarMeD","Original", "Type", "Intersection")
+  wide_tmp <- dcast(tmp, ProHarMeD+Original~Type, value.var = "Intersection")
+  wide_tmp[is.na(wide_tmp)] <- 0
+  
+  summary_tmp <- tmp %>% group_by(ProHarMeD, Original) %>% summarize("Intersection" = sum(Intersection))
+  comparison_plot <- ggplot() + geom_abline() + geom_scatterpie(aes(x=Original, y=ProHarMeD), data=wide_tmp,
+                                                                cols=names(base_colors), pie_scale = 2) + coord_equal() +
+    scale_x_continuous(breaks = c(1,2,3,4,5,6,7), limits = c(0.5,7.5)) + scale_y_continuous(breaks = c(1,2,3,4,5,6,7), limits = c(0.5,7.5)) +  geom_text(data = summary_tmp, aes(x = Original, y = ProHarMeD -0.5, label = Intersection)) +
+    scale_fill_manual(name = "Tissue", values = base_colors)  + labs(y = "ProHarMeD") + theme_bw() + theme(axis.text = element_text(size = 12)) +
+    labs(x = "Intersection Size in Original Data", y = "Intersection Size in Harmonized Data")
+
+  # Pie Chart of Filtered Intersections
+  # check with tissues
+  dt <- merge(dt, harmonized_intersections_filtered[, c("Gene", "Type")], by = c("Gene", "Type"), all.y = TRUE, all.x = FALSE)
+  tmp <- dt %>% group_by(ProHarMeD, Original, Type) %>% summarize(n())
+  tmp <- tmp[tmp$ProHarMeD != 0 & tmp$Original != 0,]
+  colnames(tmp) <- c("ProHarMeD","Original", "Type", "Intersection")
+  wide_tmp <- dcast(tmp, ProHarMeD+Original~Type, value.var = "Intersection")
+  wide_tmp[is.na(wide_tmp)] <- 0
+  
+  summary_tmp <- tmp %>% group_by(ProHarMeD, Original) %>% summarize("Intersection" = sum(Intersection))
+  comparison_filtered_plot <- ggplot() + geom_abline() + geom_scatterpie(aes(x=Original, y=ProHarMeD), data=wide_tmp,
+                                                                         cols=names(base_colors), pie_scale = 2) + coord_equal() +
+    scale_x_continuous(breaks = c(1,2,3,4,5,6,7), limits = c(0.5,7.5)) + scale_y_continuous(breaks = c(1,2,3,4,5,6,7), limits = c(0.5,7.5)) + 
+    geom_text(data = summary_tmp, aes(x = Original, y = ProHarMeD -0.5, label = Intersection)) +
+    scale_fill_manual(name = "Tissue", values = base_colors)  + labs(y = "ProHarMeD") + theme_bw() + theme(axis.text = element_text(size = 12)) +
+    labs(x = "Intersection Size in Original Data", y = "Intersection Size in Harmonized Data")
+  plot <- ggarrange(comparison_plot, comparison_filtered_plot, ncol = 2, common.legend = TRUE, legend = "right", labels = c("A", "B"), vjust = 2)
+  return(plot)
+}
