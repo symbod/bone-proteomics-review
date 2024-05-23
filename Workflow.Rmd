@@ -15,7 +15,7 @@ output:
 
 ```{r setup, results='hide', message=FALSE, warning=FALSE, error=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
-required_packages <- c("rmarkdown", "gprofiler2", "data.table", "ggplot2", "igraph", "reticulate", "plotly", "tidyr", "dplyr", "GGally", "ComplexHeatmap", "circlize")
+required_packages <- c("rmarkdown", "gprofiler2", "data.table", "ggplot2", "igraph", "reticulate", "plotly", "tidyr", "dplyr", "GGally", "ComplexHeatmap", "circlize", "readxl", "ggpattern")
 for(package in required_packages){
   if(!require(package,character.only = TRUE, quietly = TRUE)) install.packages(package, dependencies = TRUE, quietly = TRUE)
   library(package, character.only = TRUE, quietly = TRUE)
@@ -38,42 +38,69 @@ source("functions/scoring_functions.R")
 #ds <- reticulate::import("drugstone")
 #ds$print_license()
 #ds$accept_license()
-
 ```
 
-# Intersection Analysis
+# Read Data
+
+```{r}
+# Read original meta-study data on gene name level
+original_data_genes <- read_meta_study_data(file_path = original_study_file, "Gene names")
+original_data_genes <- original_data_genes$data
+data_info <- original_data_genes$meta_info
+
+# Read original meta-study data on protein level
+original_data_proteins <- read_meta_study_data(file_path = original_study_file, "UniprotAC")
+original_data_proteins <- original_data_proteins$data
+
+# Explode original data
+original_data_genes_exploded <- explode_data(original_data_genes)
+original_data_proteins_exploded <- explode_data(original_data_proteins)
+```
+
+# Harmonization of Data
+
+```{r}
+# TODO: harmonization function
+harmonized_data <- run_proharmed(gene_level = original_data_genes, protein_level = original_data_proteins)
+
+# Save harmonized data
+#TODO
+
+# Explode harmonized data
+data <- explode_data(harmonized_data)
+```
+
+## Visualizations
+
+```{r}
+in_vis_out_dir <- paste0(in_out_dir, "visualizations/")
+dir.create(file.path(in_vis_out_dir), showWarnings = FALSE)
+```
+
+### Venn Diagrams
+
+```{r}
+harmonization_venns <- create_harmonization_venn_diagrams(data_info)
+#ggsave(paste0(in_vis_out_dir, "pie_plots_studies.png"), width = 12, height = 4.5)
+```
+
+
+### Harmonization Logging Figure 
+
+TODO
+
+# Intersection Analysis of Tissue-Specific Proteins
+
+Upon harmonization, the next step was to select commonly affected proteins (CAPs) that are consistently present across multiple studies. 
 
 ```{r}
 in_out_dir <- paste0(out_dir, "intersection/")
 dir.create(file.path(in_out_dir), showWarnings = FALSE)
 ```
 
-## Read Data (Gene Names)
+## Calculate Weights and Intersections
 
-Read protein list that has been processed with proharmed (filter ids, remap gene names, map to ensembl ids, map orthologs) for all studies except for the two ECM mouse studies (only map to ensembl ids, map orthologs) since they didn't reported proteins ids in their paper.
-
-```{r}
-# Read and preprocess the data
-full_data <- as.data.frame(fread("data/cleaned_protein_list_uhh.csv", header = TRUE, na.strings = ""))
-rownames(full_data) <- full_data$V1
-full_data$V1 <- NULL
-
-# Detect the first row where the first column is numeric, indicating data start
-data_start_row <- which(sapply(rownames(full_data), function(x) grepl("^[0-9]+$", x)))[1]
-
-# Save data information and subset the main data
-
-data_info <- full_data[1:(data_start_row - 1),]
-DT::datatable(data_info, options = list(scrollX = TRUE))
-
-data <- full_data[data_start_row:nrow(full_data),]
-DT::datatable(head(data), options = list(scrollX = TRUE))
-
-# Explode data (one gene name per line, convert to numeric format)
-data <- explode_data(data)
-```
-
-## Caclulate Weights and Intersections
+TODO
 
 ```{r}
 # Initialize a list to store intermediate data frames
@@ -99,7 +126,9 @@ for(tissue in names(tissue_list)) {
 intersections <- do.call(rbind, intersections_list)
 ```
 
-## Filter Intersectione
+## Filter Intersections
+
+TODO
 
 ```{r}
 # Group by 'Type' and apply select_intersections() function to each group
@@ -111,7 +140,6 @@ resulting_data_frames <- intersections %>%
 # Combine resulting data frames into one
 filtered_intersections <- bind_rows(resulting_data_frames)
 ```
-
 
 ## Save Intersections
 
@@ -127,98 +155,9 @@ DT::datatable(intersections)
 
 ## Visualizations
 
-```{r}
-in_vis_out_dir <- paste0(in_out_dir, "visualizations/")
-dir.create(file.path(in_vis_out_dir), showWarnings = FALSE)
-```
+### Sankey plot
 
-### Sizes of Datasets per Tissue
-
-```{r}
-# Assuming intersections_all is already defined and contains 'Gene' and 'Datasets' columns
-intersections_all_exploded <- intersections_all %>%
-  select(Gene, Datasets) %>%
-  separate_rows(Datasets, sep = ";")
-
-# Count occurrences of each unique element in "Datasets"
-dataset_counts <- table(intersections_all_exploded$Datasets)
-
-# Convert the counts to a dataframe
-dataset_counts_df <- data.frame(Datasets = names(dataset_counts), Count = as.numeric(dataset_counts))
-dataset_counts_df$Datasets <- factor(dataset_counts_df$Datasets, levels = names(data_info))
-dataset_counts_df$Tissues <- unlist(c(data_info["Tissue", ])[dataset_counts_df$Datasets])
-dataset_counts_df$Tissues <- dataset_counts_df$Tissues
-
-# Create a mapping from original tissue names to new names using tissue_list
-tissue_mapping <- unlist(lapply(names(tissue_list), function(tissue) setNames(rep(tissue, length(tissue_list[[tissue]]$label)), tissue_list[[tissue]]$label)))
-
-# Replace tissue names using the mapping
-dataset_counts_df$Tissues  <- sapply(dataset_counts_df$Tissues, function(x) tissue_mapping[[x]])
-dataset_counts_df$Assay <- factor(sapply(dataset_counts_df$Tissues, function(x) tissue_list[[x]]$assay))
-dataset_counts_df$Tissues <- factor(dataset_counts_df$Tissues)
-
-# Create the boxplot with log-transformed y-axis
-boxplot <- ggplot(dataset_counts_df, aes(x = Tissues, y = Count, fill = Tissues)) +
-  geom_boxplot() +
-  geom_jitter(width = 0.2, size = 2, alpha = 0.5) +  # Add jittered points
-  scale_fill_manual(values = colors_for_levels) +  # Custom colors
-  scale_y_log10() +  # Log-transform the y-axis
-  facet_grid(. ~ Assay, scales = "free_x", space = "free_x") +  # Separate 'In vitro' and 'In vivo'
-  labs(title = "Distribution of Dataset Counts by Tissue and Assay",
-       x = "",
-       y = "no. of DAPs per study (Log Scale)",
-       fill = "Tissue") +
-  theme_minimal() +
-  theme(axis.text.x = element_blank(),
-        panel.spacing = unit(2, "lines"))  # Adjust spacing between panels
-
-print(boxplot)
-ggsave(paste0(in_vis_out_dir, "dataset_sizes_per_tissue.png"), boxplot, width = 30, height = 15, units = "cm", dpi = 150, bg = "white")
-```
-
-### Sizes of Prior and Post WSI Filtering
-
-```{r}
-# Your existing pre-filtered data preparation
-genes_per_tissue <- intersections_all %>%
-  rename(Tissue = Type) %>%
-  group_by(Tissue) %>%
-  summarise(SumUniqueGenes = n_distinct(Gene)) %>%
-  mutate(DataType = "Pre-Filtered")
-
-# Prepare post-filtered data
-filtered_genes_per_tissue <- filtered_intersections %>%
-  rename(Tissue = Type) %>%
-  group_by(Tissue) %>%
-  summarise(SumUniqueGenes = n_distinct(Gene)) %>%
-  mutate(DataType = "Post-Filtered")
-
-# Combine both datasets
-combined_genes_data <- rbind(genes_per_tissue, filtered_genes_per_tissue)
-
-combined_genes_data$DataType <- factor(combined_genes_data$DataType, levels = c("Pre-Filtered", "Post-Filtered"))
-
-# Create the bar plot
-bar_plot <- ggplot(combined_genes_data, aes(x = Tissue, y = SumUniqueGenes, fill = Tissue, alpha = DataType)) +
-  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
-  geom_text(aes(label = SumUniqueGenes), 
-            position = position_dodge(width = 0.8), vjust = -0.5, size = 3) +
-  scale_y_log10() + # Log-transform the y-axis
-  scale_fill_manual(values = colors_for_levels) +
-  scale_alpha_manual(values = c(1, 0.5)) + # Pre-filtered bars are 50% transparent
-  labs(title = "Sum of Unique Genes Per Tissue (Pre and Post Filtering)",
-       x = "",
-       y = "Sum of Unique Genes") +
-  theme_minimal() +
-  theme(axis.text.x = element_blank()) # Rotate x-axis labels for readability
-
-saveRDS(combined_genes_data, paste0(out_dir, "/intersection/combined_genes_data_unharmonized.rds"))
-
-print(bar_plot)
-ggsave(paste0(in_vis_out_dir, "sizes_per_tissue_pre_and_post_filtering.png"), bar_plot, width = 30, height = 15, units = "cm", dpi = 150, bg = "white")
-```
-
-### Filtering based on Intersection and Weight
+### WSI for each tissue
 
 ```{r}
 # For reproducibility, set a seed
@@ -252,7 +191,11 @@ ggarrange(p1, p2, ncol = 1, labels = NULL, common.legend = FALSE, legend = "bott
 ggsave(paste0(out_dir, "weighted_intersections_all.png"), width = 10, height = 12)
 ```
 
-## Identify Core Genes
+### Intersection Size in Harmonized Data and Original Data
+
+TODO
+
+# Identification of Core Genes
 
 ```{r}
 # Check for duplicated genes across different Types

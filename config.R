@@ -1,5 +1,9 @@
 # Configuration for Bone Biomarker Review
 
+# Setup file names
+original_study_file <- "data/Protein_lists_UHH_v6.xlsx" # TODO: remove two first rows
+
+
 # Setup overall
 
 tissue_list <- list("EVs"= list("label" = "EVs",
@@ -9,9 +13,9 @@ tissue_list <- list("EVs"= list("label" = "EVs",
                     "ECM"= list("label" = "ECM",
                                 "assay" = "In vitro"), 
                     "Bone"= list("label" = "bone",
-                                 "assay" = "in vivo"), 
+                                 "assay" = "In vivo"), 
                     "Liquid-Biopsy" = list("label" = c("Serum-Plasma", "Plasma-EVs"),
-                                              "assay" = "in vivo"))
+                                              "assay" = "In vivo"))
 
 out_dir <- "/home/kikky/Projects/symbod/bone-proteomics-review//data/results/"
 
