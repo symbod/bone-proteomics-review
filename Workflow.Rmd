@@ -15,7 +15,7 @@ output:
 
 ```{r setup, results='hide', message=FALSE, warning=FALSE, error=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warnings = FALSE)
-required_packages <- c("rmarkdown", "gprofiler2", "data.table", "ggplot2", "igraph", "reticulate", "plotly", "tidyr", "dplyr", "GGally", "ComplexHeatmap", "circlize", "readxl", "ggpattern", "stringr", "openxlsx")
+required_packages <- c("rmarkdown", "gprofiler2", "data.table", "ggplot2", "igraph", "reticulate", "plotly", "tidyr", "dplyr", "GGally", "ComplexHeatmap", "circlize", "readxl", "ggpattern", "stringr", "openxlsx", "ggtext", "ggpubr", "scatterpie")
 for(package in required_packages){
   if(!require(package,character.only = TRUE, quietly = TRUE)) install.packages(package, dependencies = TRUE, quietly = TRUE)
   library(package, character.only = TRUE, quietly = TRUE)
@@ -70,9 +70,6 @@ harmonized_data <- run_proharmed(gene_level = original_data_genes, protein_level
 # Save harmonized data
 #TODO
 
-# TODO: generate logging supplementary figure -> either source the file or create function (but code already clean)
-source("logging.R")
-
 # Read harmonized data from paper:
 harmonized_data <- readRDS(paste0(harm_out_dir, "harmonized_data.rds"))
 
@@ -87,13 +84,16 @@ data <- explode_data(harmonized_data)
 ```{r}
 harmonization_venns <- create_harmonization_venn_diagrams(data_info)
 harmonization_venns
-#ggsave(paste0(harm_out_dir, "pie_plots_studies.png"), width = 12, height = 4.5)
+ggsave(paste0(harm_out_dir, "pie_plots_studies.png"), width = 12, height = 4.5)
 ```
 
 ### Harmonization Logging Figure 
 
-TODO!!!
+```{r}
+plot_proharmed_logging("data/results/harmonization/logging/")
+ggsave(paste0(harm_out_dir, "proharmed_logging.png"), width = 8, height = 12)
 
+```
 # Intersection Analysis of Tissue-Specific Proteins
 
 ```{r}
@@ -129,8 +129,11 @@ filtered_intersections_original <- filter_intersections(intersections_original, 
 ```{r}
 # Only save harmonized intersections
 intersections_all <- intersections
+
 intersections <- intersections[intersections$Intersected != 1,]
+
 filtered_intersections <- filtered_intersections[filtered_intersections$Intersected != 1,]
+
 write.table(intersections_all, paste0(in_out_dir,"intersection_analysis_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
 write.table(intersections, paste0(in_out_dir,"intersection_analysis_>1_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
 write.table(filtered_intersections, paste0(in_out_dir, "filtered_intersection_analysis_df.csv"), quote=FALSE, sep="\t", row.names = FALSE)
@@ -144,13 +147,13 @@ DT::datatable(intersections)
 ```{r}
 
 # Sankey on the number of studies per tissue and species 
-sankey <- generate_sankey_plot(data_info)
+sankey <- generate_sankey_plot(data_info, colors_for_levels)
 
 # Number of extracted DAPs per study and tissue type
-boxplot_DAPs <- plot_boxplot_DAPS(intersections_all)
+boxplot_DAPs <- plot_boxplot_DAPS(intersections_all, data_info, tissue_list, colors_for_levels)
 
 # Number of CAPs per study and tissue type (pre-filtered and post-filtered)
-barplot_CAPs <- plot_barplot_CAPS(intersections_all, filtered_intersections)
+barplot_CAPs <- plot_barplot_CAPS(intersections_all, filtered_intersections, tissue_list, colors_for_levels)
 
 # Combine for paper figure 3
 p <- ggarrange(boxplot_DAPs, barplot_CAPs, ncol = 2, labels = c("B", "C"), font.label = list(size = 16), legend = "none")
@@ -189,7 +192,7 @@ ggsave(paste0(in_out_dir, "weighted_intersections_all.png"), width = 10, height 
 ### Intersection Size in Harmonized Data and Original Data
 
 ```{r}
-plot_original_vs_harmonized_intersections(intersections, filtered_intersections, intersections_original) # TODO: bug fixing -> figure not the same as previously
+plot_original_vs_harmonized_intersections(intersections_all, filtered_intersections, intersections_original) # TODO: bug fixing -> figure not the same as previously
 ggsave(paste0(in_out_dir, "pieplot_original_vs_harmonization.png"), width = 10, height = 12)
 
 ```
@@ -220,6 +223,10 @@ dir.create(file.path(ne_out_dir), showWarnings = FALSE)
 ```
 
 ## Generate Networks
+
+### Comparative Analysis of BioGRID, IID, NeDRex, and STRING
+
+TODO: add two supplementary plots
 
 ### Core Genes
 
@@ -260,6 +267,7 @@ color_palette <- c("seed" = "lightblue", "new" = "red", "significant only in sin
 ### Tissue Networks
 
 TODO: check if we need all this (drugs code could be removed no?)
+
 ```{r}
 networks_tissues <- list()
 
@@ -517,7 +525,7 @@ scoring_heatmap <- Heatmap(as.matrix(all_ranks),
   width = unit(6, "cm")
 )
 
-ht_opt$ROW_ANNO_PADDING <- unit(0.5, "cm")
+ht_opt$ROW_ANNO_PADDING <- unit(0.1, "cm")
 ```
 
 Generate legends:
@@ -539,8 +547,7 @@ literature_legend <- Legend(labels = unique(literature_results$Literature), titl
 Save heatmap: 
 
 ```{r}
-# TODO: change to eps
-png(paste0(out_dir, "scoring/scoring_heatmap.png"), width=11,height=12,units="in",res=1200)
+tiff(paste0(out_dir, "scoring/scoring_heatmap.tiff"), width=12,height=13,units="in",res=1200)
 draw(scoring_heatmap, annotation_legend_list = list(heatmap_legend, digest_legend, drug_legend, literature_legend, type_legend, tissue_legend, assay_legend), annotation_legend_side = "right", ht_gap = unit(0.5, "cm"), auto_adjust = TRUE)
 dev.off()
 ```

@@ -1,5 +1,5 @@
 
-generate_sankey_plot <- function(data_info){
+generate_sankey_plot <- function(data_info, colors_for_levels){
   ## First get necessary information in the right format
   input <- t(data_info[c(1,2,4,5),])
   input <- as.data.frame(input)
@@ -65,7 +65,7 @@ generate_sankey_plot <- function(data_info){
   return(sankey)
 }
 
-plot_boxplot_DAPS <- function(intersections_all){
+plot_boxplot_DAPS <- function(intersections_all, data_info, tissue_list, colors_for_levels){
   # Assuming intersections_all is already defined and contains 'Gene' and 'Datasets' columns
   intersections_all_exploded <- intersections_all %>%
     select(Gene, Datasets) %>%
@@ -107,8 +107,7 @@ plot_boxplot_DAPS <- function(intersections_all){
   return(boxplot)
 }
 
-
-plot_barplot_CAPS <- function(intersections_all, filtered_intersections){
+plot_barplot_CAPS <- function(intersections_all, filtered_intersections, tissue_list, colors_for_levels){
   # Your existing pre-filtered data preparation
   genes_per_tissue <- intersections_all %>%
     rename(Tissue = Type) %>%
