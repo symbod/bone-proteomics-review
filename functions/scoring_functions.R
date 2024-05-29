@@ -205,19 +205,19 @@ generate_tissue_assay_file_anno_vec <- function(tissue_annotation, tissue_list, 
     # tissue piechart
     ggplot(data, aes(x = "", y = value, fill = tissue)) + geom_bar(stat = "identity", width = 1) +
       coord_polar("y", start = 0) + scale_fill_manual(values = colors_for_levels[tissues]) + theme_void() +   theme(legend.position = "none")
-    ggsave(paste0(out_tmp_tissue, "/", gene, ".png"), width = 1, height = 1)
+    ggsave(paste0(out_tmp_tissue, "/", gene, ".eps"), width = 1, height = 1, device = "eps")
     
     # assay piechart
     ggplot(unique(data[, c("value", "assay")]), aes(x = "", y = value, fill = assay)) + geom_bar(stat = "identity", width = 1) +
       coord_polar("y", start = 0) + scale_fill_manual(values = colors_for_levels[unique(data$assay)]) + theme_void() +   theme(legend.position = "none")
-    ggsave(paste0(out_tmp_assay, "/", gene, ".png"), width = 1, height = 1)
+    ggsave(paste0(out_tmp_assay, "/", gene, ".eps"), width = 1, height = 1, device = "eps")
   })
   
   pie_charts_tissue_files <- list.files(out_tmp_tissue, full.names = TRUE)
   pie_charts_assay_files <- list.files(out_tmp_assay, full.names = TRUE)
   
   # rearrange vector for problem and new 
-  names(pie_charts_tissue_files) <- sapply(list.files(out_tmp_tissue), function(x) strsplit(x, ".png")[[1]])
+  names(pie_charts_tissue_files) <- sapply(list.files(out_tmp_tissue), function(x) strsplit(x, ".eps")[[1]])
   names_new_problem_genes <- ids_order[! ids_order %in% names(tissue_annotation)]
   new_problem_genes <- rep("", length(names_new_problem_genes))
   names(new_problem_genes) <- names_new_problem_genes
@@ -226,7 +226,7 @@ generate_tissue_assay_file_anno_vec <- function(tissue_annotation, tissue_list, 
   tissue_anno_vec <- tissue_anno_vec[ids_order]
   
   # assay annotation
-  names(pie_charts_assay_files) <- sapply(list.files(out_tmp_assay), function(x) strsplit(x, ".png")[[1]])
+  names(pie_charts_assay_files) <- sapply(list.files(out_tmp_assay), function(x) strsplit(x, ".eps")[[1]])
   assay_anno_vec <- c(pie_charts_assay_files, new_problem_genes)
   assay_anno_vec <- assay_anno_vec[ids_order]
   return(list("tissue" = tissue_anno_vec, "assay" = assay_anno_vec))
