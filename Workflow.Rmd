@@ -1,7 +1,7 @@
 ---
 title: "Complete Workflow for Bone Biomarker Review"
-author: "Klaudia Adamowicz"
-date: "2023-12-21"
+author: "Klaudia Adamowicz & Lis Arend"
+date: "2024-06-07"
 output: 
   html_document:
     number_sections: false
@@ -94,6 +94,7 @@ plot_proharmed_logging("data/results/harmonization/logging/")
 ggsave(paste0(harm_out_dir, "proharmed_logging.png"), width = 8, height = 12)
 
 ```
+
 # Intersection Analysis of Tissue-Specific Proteins
 
 ```{r}
@@ -192,7 +193,8 @@ ggsave(paste0(in_out_dir, "weighted_intersections_all.png"), width = 10, height 
 ### Intersection Size in Harmonized Data and Original Data
 
 ```{r}
-plot_original_vs_harmonized_intersections(intersections_all, filtered_intersections, intersections_original) # TODO: bug fixing -> figure not the same as previously
+plot_original_vs_harmonized_intersections(intersections_all, filtered_intersections, intersections_original) 
+
 ggsave(paste0(in_out_dir, "pieplot_original_vs_harmonization.png"), width = 10, height = 12)
 
 ```
@@ -236,6 +238,12 @@ core_ami_ds <- run_drugstone_ami(seeds)
 core_drugs_ds <- run_drugstone_drugs(core_ami_ds$ds_genes, core_ami_ds$ds_edges)
 save_results(core_drugs_ds, "core_genes", ne_out_dir)
 ```
+
+```{r}
+# Read network data from paper:
+core_drugs_ds <- #TODO
+```
+
 
 ### Tissue Genes
 
@@ -592,168 +600,6 @@ data_names <- list(
   "Drugs" = drugs
 )
 openxlsx::write.xlsx(data_names, file = paste(out_dir, "scoring/scoring_heatmap_data.xlsx"))
-```
-
-# What is with this?
-
-## Enrichment Term Analysis
-
-```{r}
-prop <- fread("../BoneBiomarkerReview/data/results/go_networks/term_intersections_proportions.tsv")
-prop1 <- prop[prop$term_name == "cell adhesion",]
-
-seeds <- strsplit(prop1$intersecting_genes_all[1], ", ")[[1]]
-ami_ds <- run_drugstone_ami(seeds)
-drugs_ds <- run_drugstone_drugs(ami_ds$ds_genes, ami_ds$ds_edges)
-```
-
-```{r}
-# Select only the columns 'intersecting_genes' and 'dataframes'
-selected_data <- prop1[, .(intersecting_genes, dataframes)]
-
-# Split 'intersecting_genes' by ", " and explode the rows
-exploded_data <- selected_data[, strsplit(intersecting_genes, ", "), by = .(dataframes)]
-
-# Convert the list column to individual rows
-exploded_data_long <- exploded_data[, .(intersecting_gene = unlist(V1)), by = .(dataframes)]
-exploded_data_long[, dataframes := gsub(", ", ";", dataframes)]
-
-list_by_gene <- split(exploded_data_long$dataframes, exploded_data_long$intersecting_gene)
-```
-
-```{r}
-seed_att <- sapply(igraph::get.vertex.attribute(drugs_ds$ds_graph)$name, function(x) {ifelse(x %in% seeds,  list_by_gene[[x]],  ifelse(x %in% names(drugs_ds$ds_drugs),  "drug",  "exception"))})
-drugs_ds$ds_graph <- igraph::set_vertex_attr(drugs_ds$ds_graph, "node_source", value = seed_att)
-```
-
-
-```{r}
-colors_for_levels <- c(
-  "EVs" = "#A3A500",
-  "Cells" = "#F8766D",
-  "Liquid-Biopsy" = "#E76BF3",
-  "Bone" = "#00B0F6",
-  "ECM" = "#00BF7D",
-  "exception" = "lightgrey",
-  "drug" = "#7C7C7C"
-)
-png(file=paste0("cell_adhesion_metwork_with_drugs.png"), height = 2000, width = 3000, res=100)
-draw_pie_chart_network(graph = drugs_ds$ds_graph, 
-                       attributes = as.data.frame(get.vertex.attribute(drugs_ds$ds_graph)), 
-                       all_pie_values = names(colors_for_levels),
-                       pie_column = "node_source",
-                       pie_colors = colors_for_levels,
-                       label = TRUE,
-                       seed = 123,
-                       legend_position = "topleft")
-dev.off()
-```
-
-```{r}
-seed_att <- sapply(igraph::get.vertex.attribute(ami_ds$ds_graph)$name, function(x) {ifelse(x %in% seeds,  list_by_gene[[x]], "Exception")})
-ami_ds$ds_graph <- igraph::set_vertex_attr(ami_ds$ds_graph, "node_source", value = seed_att)
-
-colors_for_levels <- c(
-  "EVs" = "#A3A500",
-  "Cells" = "#F8766D",
-  "Liquid-Biopsy" = "#E76BF3",
-  "Bone" = "#00B0F6",
-  "ECM" = "#00BF7D",
-  "Exception" = "lightgrey"
-)
-png(file=paste0("cell_adhesion_metwork.png"), height = 2000, width = 3000, res=100)
-draw_pie_chart_network(graph = ami_ds$ds_graph, 
-                       attributes = as.data.frame(get.vertex.attribute(ami_ds$ds_graph)), 
-                       all_pie_values = names(colors_for_levels),
-                       pie_column = "node_source",
-                       pie_colors = colors_for_levels,
-                       label = TRUE,
-                       seed = 123,
-                       legend_position = "topleft")
-dev.off()
-```
-
-```{r}
-save_results(drugs_ds, "cell_adhesion_genes", "")
-```
-
-
-```{r}
-prop2 <- prop[prop$term_name == "collagen-containing extracellular matrix",]
-
-seeds <- strsplit(prop2$intersecting_genes_all[1], ", ")[[1]]
-ami_ds <- run_drugstone_ami(seeds)
-drugs_ds <- run_drugstone_drugs(ami_ds$ds_genes, ami_ds$ds_edges)
-```
-
-```{r}
-# Select only the columns 'intersecting_genes' and 'dataframes'
-selected_data <- prop2[, .(intersecting_genes, dataframes)]
-
-# Split 'intersecting_genes' by ", " and explode the rows
-exploded_data <- selected_data[, strsplit(intersecting_genes, ", "), by = .(dataframes)]
-
-# Convert the list column to individual rows
-exploded_data_long <- exploded_data[, .(intersecting_gene = unlist(V1)), by = .(dataframes)]
-exploded_data_long[, dataframes := gsub(", ", ";", dataframes)]
-
-list_by_gene <- split(exploded_data_long$dataframes, exploded_data_long$intersecting_gene)
-```
-
-```{r}
-seed_att <- sapply(igraph::get.vertex.attribute(drugs_ds$ds_graph)$name, function(x) {ifelse(x %in% seeds,  list_by_gene[[x]],  ifelse(x %in% names(drugs_ds$ds_drugs),  "drug",  "exception"))})
-drugs_ds$ds_graph <- igraph::set_vertex_attr(drugs_ds$ds_graph, "node_source", value = seed_att)
-```
-
-
-```{r}
-colors_for_levels <- c(
-  "EVs" = "#A3A500",
-  "Cells" = "#F8766D",
-  "Liquid-Biopsy" = "#E76BF3",
-  "Bone" = "#00B0F6",
-  "ECM" = "#00BF7D",
-  "exception" = "lightgrey",
-  "drug" = "#7C7C7C"
-)
-png(file=paste0("collagen-containing_EM_metwork_with_drugs.png"), height = 2000, width = 3000, res=100)
-draw_pie_chart_network(graph = drugs_ds$ds_graph, 
-                       attributes = as.data.frame(get.vertex.attribute(drugs_ds$ds_graph)), 
-                       all_pie_values = names(colors_for_levels),
-                       pie_column = "node_source",
-                       pie_colors = colors_for_levels,
-                       label = TRUE,
-                       seed = 123,
-                       legend_position = "topleft")
-dev.off()
-```
-
-```{r}
-seed_att <- sapply(igraph::get.vertex.attribute(ami_ds$ds_graph)$name, function(x) {ifelse(x %in% seeds,  list_by_gene[[x]], "Exception")})
-ami_ds$ds_graph <- igraph::set_vertex_attr(ami_ds$ds_graph, "node_source", value = seed_att)
-
-colors_for_levels <- c(
-  "EVs" = "#A3A500",
-  "Cells" = "#F8766D",
-  "Liquid-Biopsy" = "#E76BF3",
-  "Bone" = "#00B0F6",
-  "ECM" = "#00BF7D",
-  "Exception" = "lightgrey"
-)
-png(file=paste0("collagen-containing_EM_metwork.png"), height = 2000, width = 3000, res=100)
-draw_pie_chart_network(graph = ami_ds$ds_graph, 
-                       attributes = as.data.frame(get.vertex.attribute(ami_ds$ds_graph)), 
-                       all_pie_values = names(colors_for_levels),
-                       pie_column = "node_source",
-                       pie_colors = colors_for_levels,
-                       label = TRUE,
-                       seed = 123,
-                       legend_position = "topleft")
-dev.off()
-```
-
-```{r}
-save_results(drugs_ds, "collagen-containing_EM", "")
 ```
 ```
 

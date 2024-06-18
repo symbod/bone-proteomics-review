@@ -17,7 +17,7 @@ tissue_list <- list("EVs"= list("label" = "EVs",
                     "Liquid-Biopsy" = list("label" = c("Serum-Plasma", "Plasma-EVs"),
                                               "assay" = "In vivo"))
 
-out_dir <- "/home/kikky/Projects/symbod/bone-proteomics-review//data/results/"
+out_dir <- "./data/results/"
 
 colors_for_levels <- c(
   "Human" = "#66A61E",
