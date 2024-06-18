@@ -1,0 +1,41 @@
+Gene	unique_types	types
+AHSG	3	Bone; Cells; Liquid-Biopsy
+ANXA1	3	Bone; Cells; ECM
+COL1A1	3	Bone; Cells; EVs
+FBN1	3	Bone; Cells; EVs
+APOA1	2	Bone; Liquid-Biopsy
+B2M	2	Cells; Liquid-Biopsy
+C3	2	Bone; Liquid-Biopsy
+CALD1	2	Bone; Cells
+CCDC80	2	Cells; EVs
+CCN1	2	Cells; EVs
+CCN2	2	Cells; EVs
+COL14A1	2	Bone; EVs
+COL5A2	2	Cells; EVs
+CTSA	2	Bone; Cells
+FLNA	2	EVs; Liquid-Biopsy
+FN1	2	Bone; EVs
+GAPDH	2	Cells; EVs
+HP	2	Bone; Liquid-Biopsy
+HSPG2	2	Bone; EVs
+HTRA1	2	Bone; EVs
+IGFBP7	2	Cells; EVs
+KNG1	2	Bone; Liquid-Biopsy
+LGALS1	2	ECM; EVs
+LMNA	2	Bone; Cells
+LTBP2	2	Cells; EVs
+MMP2	2	Cells; EVs
+NPM1	2	Bone; Cells
+PKM	2	Cells; Liquid-Biopsy
+POSTN	2	Bone; EVs
+S100A4	2	Bone; Cells
+SERPINA1	2	Bone; Liquid-Biopsy
+SERPINC1	2	Bone; Liquid-Biopsy
+SERPINE2	2	Cells; EVs
+SERPINH1	2	Bone; Cells
+THBS2	2	Cells; EVs
+TPM4	2	Bone; Liquid-Biopsy
+TUBA1C	2	Bone; EVs
+TUBA4A	2	Bone; EVs
+YWHAE	2	Bone; Liquid-Biopsy
+YWHAZ	2	EVs; Liquid-Biopsy

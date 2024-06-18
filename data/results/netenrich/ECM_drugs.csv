@@ -1,0 +1,21 @@
+drugId,label,status,drugstoneType,score,isResult,isConnector,hasEdgesTo
+DB00098,Antithymocyte immunoglobulin (rabbit),,drug,0.2685,TRUE,FALSE,CD4
+DB00131,Adenosine phosphate,approved,drug,0.6389,TRUE,FALSE,TRPM4
+DB00132,alpha-Linolenic acid,,drug,1,TRUE,FALSE,SLC8A1
+DB00159,Icosapent,,drug,1,TRUE,FALSE,SLC8A1
+DB00171,ATP,,drug,0.6389,TRUE,FALSE,TRPM4
+DB00415,Ampicillin,approved,drug,0.6389,TRUE,FALSE,TRPM4
+DB01016,Glyburide,approved,drug,0.6389,TRUE,FALSE,TRPM4
+DB01429,Aprindine,,drug,1,TRUE,FALSE,SLC8A1
+DB02266,Flufenamic acid,approved,drug,0.6389,TRUE,FALSE,TRPM4
+DB02482,Phosphonothreonine,,drug,0.3704,TRUE,FALSE,S100A11
+DB03345,Mercaptoethanol,,drug,0.0929,TRUE,FALSE,LGALS1
+DB04396,Thiodigalactoside,,drug,0.0929,TRUE,FALSE,LGALS1
+DB04447,1,4-Dithiothreitol,,drug,0.0929,TRUE,FALSE,LGALS1
+DB04855,Dronedarone,approved,drug,1,TRUE,FALSE,SLC8A1
+DB06231,Caldaret,,drug,1,TRUE,FALSE,SLC8A1
+DB06241,Clenoliximab,,drug,0.2685,TRUE,FALSE,CD4
+DB11638,Artenimol,,drug,0.0929,TRUE,FALSE,LGALS1
+DB12695,Phenethyl Isothiocyanate,,drug,0.2688,TRUE,FALSE,S100A10
+DB12698,Ibalizumab,,drug,0.2685,TRUE,FALSE,CD4
+DB13123,OTX-008,,drug,0.0929,TRUE,FALSE,LGALS1

@@ -1,0 +1,21 @@
+drugId,label,status,drugstoneType,score,isResult,isConnector,hasEdgesTo
+DB00013,Urokinase,,drug,0.3483,TRUE,FALSE,NID1
+DB00030,Insulin human,,drug,0.4239,TRUE,FALSE,IGFBP7
+DB00048,Collagenase clostridium histolyticum,,drug,0.6061,TRUE,FALSE,COL1A1;COL3A1
+DB00110,Palivizumab,,drug,0.5435,TRUE,FALSE,C1R
+DB00111,Daclizumab,,drug,0.5435,TRUE,FALSE,C1R
+DB00254,Doxycycline,approved,drug,0.1966,TRUE,FALSE,MMP2
+DB00399,Zoledronic acid,approved,drug,0.1966,TRUE,FALSE,MMP2
+DB01593,Zinc,,drug,0.6583,TRUE,FALSE,APP;FN1;C1R;CFH
+DB04866,Halofuginone,,drug,0.2931,TRUE,FALSE,COL1A1;MMP2
+DB06404,Human C1-esterase inhibitor,,drug,0.5435,TRUE,FALSE,C1R
+DB06423,Endostatin,,drug,0.1966,TRUE,FALSE,MMP2
+DB08818,Hyaluronic acid,,drug,1,TRUE,FALSE,CD44;HAPLN1
+DB09130,Copper,,drug,0.2489,TRUE,FALSE,GAPDH;CFH;CLIC1;APP;LDHA;ANXA5
+DB09228,Conestat alfa,,drug,0.5435,TRUE,FALSE,C1R
+DB11617,Aclarubicin,,drug,0.1966,TRUE,FALSE,MMP2
+DB12598,Nafamostat,,drug,0.5435,TRUE,FALSE,C1R
+DB12695,Phenethyl Isothiocyanate,,drug,0.7111,TRUE,FALSE,PAPPA;YWHAZ;TUBA4A
+DB14487,Zinc acetate,approved,drug,0.6583,TRUE,FALSE,C1R;CFH;APP;FN1
+DB14533,Zinc chloride,approved,drug,0.6583,TRUE,FALSE,C1R;CFH;APP;FN1
+DB14548,Zinc sulfate, unspecified form,,drug,0.6583,TRUE,FALSE,CFH;APP;FN1;C1R

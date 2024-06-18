@@ -7,5 +7,5 @@
 renv/
 # remove all .DS_Store
 **/.DS_Store
-data/
 */.Rproj
+**/.tiff

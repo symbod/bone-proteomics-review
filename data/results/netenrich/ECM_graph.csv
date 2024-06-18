@@ -1,0 +1,30 @@
+from,to
+SLC8A1,Dronedarone
+LGALS1,Artenimol
+TRPM4,Glyburide
+SLC8A1,Icosapent
+S100A11,Phosphonothreonine
+SLC8A1,Aprindine
+CD4,Clenoliximab
+S100A10,Phenethyl Isothiocyanate
+TRPM4,Ampicillin
+LGALS1,OTX-008
+TRPM4,Adenosine phosphate
+CD4,Antithymocyte immunoglobulin (rabbit)
+LGALS1,1,4-Dithiothreitol
+LGALS1,Thiodigalactoside
+SLC8A1,Caldaret
+TRPM4,Flufenamic acid
+TRPM4,ATP
+CD4,Ibalizumab
+LGALS1,Mercaptoethanol
+SLC8A1,alpha-Linolenic acid
+LGALS1,CD4
+ANXA1,FAM24B
+SLC8A1,S100A11
+S100A11,ANXA1
+TRPM4,S100A10
+CD4,ANXA1
+LGALS1,FAM24B
+TRPM4,S100A11
+SLC8A1,S100A10
