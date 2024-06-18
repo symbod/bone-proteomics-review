@@ -1,9 +1,3 @@
----
-editor_options: 
-  markdown: 
-    wrap: 72
----
-
 # Meta-analysis of Proteomics Data from Osteoblasts, Bone and Blood
 
 ## Overview
